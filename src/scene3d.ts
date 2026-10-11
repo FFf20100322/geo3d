@@ -4,6 +4,7 @@ import { CSS2DObject, CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRe
 import { EDGES, FACES, VERTICES, selfCheck } from './geo'
 import { edgeKey, type Renderable } from './scene'
 import type { Ray } from './drag'
+import type { AnnotationShape } from './annotation'
 import type { Vec3 } from './solver'
 
 /**
@@ -34,6 +35,8 @@ export interface Scene3d {
   setReveal(reveal: Reveal | null): void
   /** null 表示这一步没有要强调的东西 */
   setHighlight(hl: Highlight | null): void
+  /** 重画全部角度标注。传空数组就是关掉标注。 */
+  setAnnotations(list: AnnotationShape[]): void
   /** 只挪动若干个点并同步更新连着它们的棱，用来做动点拖动 */
   setPositions(pos: Record<string, Vec3>): void
   /** 允许被手指抓住的点。命中判定用实时坐标，所以拖完之后不用重新登记。 */
@@ -236,8 +239,80 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
     }
   }
 
-  /** 场景的尺度由题目里的长度决定（可能是 2，也可能是 6），所以每次换场景都要重新取景 */
-  function fitCamera(r: Renderable) {
+  /** 角度标注单独放一组，开关起来不影响图形本身 */
+  const annotGroup = new THREE.Group()
+  scene.add(annotGroup)
+  const matArc = new THREE.LineBasicMaterial({ color: 0x6ee7ff })
+  const matExtra = new THREE.LineDashedMaterial({
+    color: 0x6ee7ff,
+    dashSize: 0.12,
+    gapSize: 0.1,
+    opacity: 0.75,
+    transparent: true,
+  })
+
+  interface AnnotSlot {
+    line: THREE.Line
+    extras: THREE.LineSegments[]
+    label: CSS2DObject
+  }
+  const slots: AnnotSlot[] = []
+
+  /** 就地更新一条线的顶点，数量对不上就整条重建 */
+  function setLinePoints(obj: THREE.Line | THREE.LineSegments, pts: Vec3[]) {
+    const geo = obj.geometry
+    const attr = geo.getAttribute('position') as THREE.BufferAttribute | undefined
+    if (!attr || attr.count !== pts.length) {
+      geo.setFromPoints(pts.map(v3))
+    } else {
+      pts.forEach((p, i) => attr.setXYZ(i, p[0], p[1], p[2]))
+      attr.needsUpdate = true
+    }
+    geo.computeBoundingSphere()
+  }
+
+  /**
+   * 重画角度标注。
+   * 刻意做成就地复用对象而不是每次重建：拖动动点时每帧都会调到这里，
+   * 每帧新建几何体与标签 DOM 在手机上会明显发卡。
+   */
+  function setAnnotations(list: AnnotationShape[]) {
+    while (slots.length > list.length) {
+      const s = slots.pop()
+      if (!s) break
+      annotGroup.remove(s.line, s.label, ...s.extras)
+    }
+    list.forEach((a, i) => {
+      let s = slots[i]
+      if (!s) {
+        const el = document.createElement('div')
+        el.className = 'angle-label'
+        const label = new CSS2DObject(el)
+        s = { line: new THREE.Line(new THREE.BufferGeometry(), matArc), extras: [], label }
+        annotGroup.add(s.line, s.label)
+        slots[i] = s
+      }
+      setLinePoints(s.line, a.arc)
+      while (s.extras.length > a.extras.length) {
+        const gone = s.extras.pop()
+        if (gone) annotGroup.remove(gone)
+      }
+      a.extras.forEach((pair, j) => {
+        let e = s.extras[j]
+        if (!e) {
+          e = new THREE.LineSegments(new THREE.BufferGeometry(), matExtra)
+          annotGroup.add(e)
+          s.extras[j] = e
+        }
+        setLinePoints(e, pair)
+        e.computeLineDistances()
+      })
+      s.label.element.textContent = a.text
+      s.label.position.copy(v3(a.labelAt))
+    })
+  }
+
+  /** 场景的尺度由题目里的长度决定（可能是 2，也可能是 6），所以每次换场景都要重新取景 */  function fitCamera(r: Renderable) {
     const all = [...r.vertices.map((v) => v3(v.at)), ...r.edges.flatMap((e) => [v3(e.a), v3(e.b)])]
     if (!all.length) return
     const box = new THREE.Box3().setFromPoints(all)
@@ -291,6 +366,12 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
   let grabbables: string[] = []
   let dragging: string | null = null
   let activePointer: number | null = null
+  /** 当前按在屏幕上的手指数。超过一根就一律让给缩放与转视角。 */
+  const activePointers = new Set<number>()
+  /** 拖点开始时那根手指落下的位置，用来在让位时补交给轨道控制 */
+  let dragStart = { x: 0, y: 0 }
+  /** 我们自己补发的事件不要再被自己处理一遍 */
+  let replaying = false
   const raycaster = new THREE.Raycaster()
   const ndc = new THREE.Vector2()
   /** 命中半径（CSS 像素）。手指比鼠标粗，给小了会抓不住。 */
@@ -313,8 +394,64 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
     return { origin: [o.x, o.y, o.z], dir: [d.x, d.y, d.z] }
   }
 
+  /** 放弃当前这次拖点，把控制权交还给轨道控制 */
+  function cancelDrag(): void {
+    if (dragging === null) return
+    const id = activePointer
+    dragging = null
+    activePointer = null
+    controls.enabled = true
+    if (id !== null) {
+      try {
+        host.releasePointerCapture(id)
+      } catch {
+        // 没抓住也无所谓，忽略
+      }
+    }
+    api.onRelease?.('')
+  }
+
+  /**
+   * 把第一根手指的按下事件补交给轨道控制。
+   * 因为拖点开始时我们把那次 pointerdown 拦下了，轨道控制只看到第二根手指，
+   * 会把「捏合缩放」当成「单指旋转」。补一次，它才认得这是两指手势。
+   */
+  function replayPointerDown(pointerId: number, x: number, y: number, pointerType: string): void {
+    replaying = true
+    try {
+      renderer.domElement.dispatchEvent(
+        new PointerEvent('pointerdown', {
+          pointerId,
+          pointerType,
+          isPrimary: true,
+          clientX: x,
+          clientY: y,
+          buttons: 1,
+          bubbles: true,
+          cancelable: true,
+        }),
+      )
+    } finally {
+      replaying = false
+    }
+  }
+
   function onPointerDown(e: PointerEvent) {
-    if (activePointer !== null || !grabbables.length) return
+    if (replaying) return
+    activePointers.add(e.pointerId)
+
+    // 两根以上的手指 = 用户在缩放或转视角，一律不拖点
+    if (activePointers.size > 1) {
+      if (dragging !== null && activePointer !== null) {
+        const firstId = activePointer
+        const { x, y } = dragStart
+        cancelDrag()
+        replayPointerDown(firstId, x, y, e.pointerType)
+      }
+      return // 不拦截，这一根正常传给轨道控制
+    }
+
+    if (!grabbables.length) return
     let hit: { name: string; d: number } | null = null
     for (const name of grabbables) {
       const at = positions[name]
@@ -328,6 +465,7 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
     e.preventDefault()
     dragging = hit.name
     activePointer = e.pointerId
+    dragStart = { x: e.clientX, y: e.clientY }
     controls.enabled = false
     host.setPointerCapture?.(e.pointerId)
     api.onGrab?.(dragging)
@@ -341,6 +479,7 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
   }
 
   function endDrag(e: PointerEvent) {
+    activePointers.delete(e.pointerId)
     if (dragging === null || e.pointerId !== activePointer) return
     e.stopPropagation()
     const name = dragging
@@ -370,6 +509,7 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
     setScene,
     setReveal,
     setHighlight,
+    setAnnotations,
     setPositions,
     setGrabbables: (names) => {
       grabbables = names

@@ -2,6 +2,7 @@ import type { PointDef } from './solver'
 // 带 .ts 后缀：这个模块要被 node 直接导入跑自检，值导入不给后缀会解析不到（类型导入会被剥离，所以那些可以不写）
 import { edgeKey, toDisplayName, type Scene } from './scene.ts'
 import { normalizeSubscripts } from './text.ts'
+import type { AngleSpec } from './annotation.ts'
 
 /**
  * 解题过程层。
@@ -35,6 +36,39 @@ export interface Step {
 export interface Solution {
   steps: Step[]
   answers: { label: string; value: string }[]
+  /** 这道题涉及、需要画弧标注的角度 */
+  angles: AngleSpec[]
+}
+
+const ANGLE_KINDS = ['lineLine', 'linePlane', 'dihedral'] as const
+
+/** 解析一条角度看描述。引用不存在的点就报错，不猜。 */
+function parseAngle(raw: unknown, i: number, ref: (x: unknown, what: string) => string): AngleSpec {
+  if (!isObj(raw)) throw new SolutionError(`第 ${i + 1} 个角不是对象`)
+  const kind = str(raw.kind, `第 ${i + 1} 个角的 kind`)
+  if (!(ANGLE_KINDS as readonly string[]).includes(kind)) {
+    throw new SolutionError(`第 ${i + 1} 个角的类型「${kind}」我还不会画`)
+  }
+  const value = str(raw.value, `第 ${i + 1} 个角的 value`)
+  const pair = (x: unknown, what: string): [string, string] => {
+    const a = arr(x, what).map((y) => ref(y, what))
+    if (a.length !== 2) throw new SolutionError(`${what} 应该是两个点`)
+    return a as [string, string]
+  }
+  if (kind === 'lineLine') return { kind, p: pair(raw.p, '直线的两个端点'), q: pair(raw.q, '直线的两个端点'), value }
+  if (kind === 'linePlane') {
+    const line = pair(raw.line, '直线的两个端点')
+    const plane = arr(raw.plane, '平面的三个点').map((y) => ref(y, '平面'))
+    if (plane.length !== 3) throw new SolutionError('平面应该是三个点')
+    return { kind, line, plane: plane as [string, string, string], value }
+  }
+  return {
+    kind: 'dihedral',
+    edge: pair(raw.edge, '棱的两个端点'),
+    inA: ref(raw.inA, '第一个面内的点'),
+    inB: ref(raw.inB, '第二个面内的点'),
+    value,
+  }
 }
 
 /** 把一串字母切成若干个已知点名，返回所有切法（限制数量，避免病态输入炸开） */
@@ -164,12 +198,21 @@ export function parseSolution(raw: unknown, scene: Scene): Solution {
     steps.push({ title, text, why, addPoints, addEdges, uses })
   }
 
+  // 角度描述里引用的点必须在图上真的存在（含前面步骤刚画出来的辅助点）
+  const ref = (x: unknown, what: string): string => {
+    const name = toDisplayName(str(x, what))
+    if (!known.has(name)) throw new SolutionError(`${what} 引用了不存在的点 ${name}`)
+    return name
+  }
+
   const answers = arr(raw.answers ?? [], 'answers').map((a, i) => {
     if (!isObj(a)) throw new SolutionError(`第 ${i + 1} 个答案写错了`)
     return { label: str(a.label, '答案的 label'), value: str(a.value, '答案的 value') }
   })
 
-  return { steps, answers }
+  const angles = arr(raw.angles ?? [], 'angles').map((a, i) => parseAngle(a, i, ref))
+
+  return { steps, answers, angles }
 }
 
 /** 把解题过程里逐步新增的辅助元素并进场景，得到「带辅助线的完整图形」 */

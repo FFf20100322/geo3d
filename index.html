@@ -75,6 +75,7 @@
       #pl-range { width: 100%; margin: 8px 0 0; accent-color: #2f6df6; }
       #labels .pt.hl { color: #ffd166; font-size: 19px; }
       #labels .pt.mov { color: #ffb84d; font-size: 18px; }
+      #labels .angle-label { color: #6ee7ff; font-size: 13px; font-weight: 600; white-space: nowrap; text-shadow: 0 0 3px #000, 0 0 6px #000, 0 1px 2px #000; }
 
       #dyn-panel { position: fixed; top: 104px; left: 12px; right: 12px; z-index: 16; display: none; flex-direction: column; padding: 10px 12px; border-radius: 10px; background: rgba(20,26,34,.94); border: 1px solid #2b3442; }
       /* 内容自己滚，收起按钮钉在面板底部，不会被滚出去 */
@@ -215,6 +216,7 @@
 
     <div id="scene-tools">
       <button id="dyn-toggle" class="ghost">精确调节</button>
+      <button id="annot-toggle" class="ghost">标注</button>
       <button id="mode-toggle" class="ghost">调节</button>
     </div>
     <div id="dyn-panel">

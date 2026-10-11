@@ -11,6 +11,7 @@ import {
   type ProblemCandidate,
 } from './deepseek'
 import { closestParamOnSegment, faceParams, rayPlaneHit, type Ray } from './drag'
+import { arcShape, buildAnnotation, suggestRadius, type AnnotationShape } from './annotation'
 import { createHistory, type HistoryRecord } from './history'
 import { DEMO_PROBLEM, DEMO_SCENE, DEMO_SOLUTION } from './demo'
 import { checkFacesPlanar, edgeKey, faceKey, parseScene, toRenderable, type Scene } from './scene'
@@ -96,7 +97,32 @@ function syncSceneChrome(): void {
   }
 
   $('player').style.display = onSceneView && editMode && currentSolution ? 'block' : 'none'
+  // 标注开关只在有角度可标时出现
+  $('annot-toggle').style.display = onSceneView && currentAnnotations.length ? 'block' : 'none'
+  $('annot-toggle').textContent = annotOn ? '标注 开' : '标注'
   syncViewInset()
+}
+
+// ---- 角度标注 ----
+let annotOn = false
+let currentAnnotations: AnnotationShape[] = []
+
+/** 按当前坐标重算所有角度标注。动点一动角度会变，所以要跟着重算。 */
+function refreshAnnotations(): void {
+  const base = currentScene
+  const sol = currentSolution
+  const pts = currentSolvedAll
+  currentAnnotations = []
+  if (base && sol && pts && sol.angles.length) {
+    const radius = suggestRadius(Object.values(pts))
+    const at = (n: string) => pts[n]
+    for (const spec of sol.angles) {
+      const a = buildAnnotation(spec, at, radius)
+      if (a) currentAnnotations.push(arcShape(a, radius))
+    }
+  }
+  scene?.setAnnotations(annotOn ? currentAnnotations : [])
+  $('annot-toggle').style.display = onSceneView && currentAnnotations.length ? 'block' : 'none'
 }
 
 /** 当前渲染场景里所有点的坐标，拖动动点时以它为基准重算 */
@@ -346,6 +372,8 @@ function applyMoving(fromPanel = false): void {
     }
   }
   if (Object.keys(changed).length) scene?.setPositions(changed)
+  // 角度会随动点变化，所以标注要跟着重算（scene3d 内部就地复用对象，不会每帧新建）
+  if (annotOn) refreshAnnotations()
   // 手指拖动时面板要跟着刷新；从面板自己改的就不用刷（正在输入的框会被跳过）
   if (!fromPanel) syncPanelValues()
 }
@@ -538,6 +566,11 @@ $('nav-settings').onclick = () => {
 $('btn-back').onclick = () => show('photo')
 $('scene-caption').onclick = () => show('text')
 $('mode-toggle').onclick = () => setEditMode(!editMode)
+$('annot-toggle').onclick = () => {
+  annotOn = !annotOn
+  refreshAnnotations()
+  syncSceneChrome()
+}
 $('dyn-toggle').onclick = () => {
   dynOpen = true
   dynRowsDirty = true
@@ -687,6 +720,7 @@ $('btn-demo').onclick = () => {
     stepIndex = -1
     scene?.setScene(toRenderable(merged, reSolved.points, parsed))
     pickDefaultMode()
+    refreshAnnotations()
     renderSolution(sol)
     $<HTMLButtonElement>('btn-generate').textContent = '重新生成'
     say('已载入内置示例。', 'ok')
@@ -788,12 +822,13 @@ function openRecord(r: HistoryRecord) {
         currentSolvedAll = { ...finalPoints }
         scene.setScene(toRenderable(merged, finalPoints, r.scene))
         pickDefaultMode()
+        currentSolution = r.solution
+        refreshAnnotations()
         syncSceneChrome()
         stepIndex = -1
         stopPlay()
         $<HTMLButtonElement>('btn-generate').textContent = '重新生成'
         if (r.solution) {
-          currentSolution = r.solution
           renderSolution(r.solution)
           show('solution')
           return
@@ -853,6 +888,7 @@ async function ensureScene(problemText: string, extra: string): Promise<Scene | 
       currentSolvedAll = { ...solved.points }
       scene?.setScene(render)
       pickDefaultMode()
+      refreshAnnotations()
       syncSceneChrome()
       $<HTMLButtonElement>('btn-generate').textContent = '重新生成'
       autoSave(parsed) // 同一条存档从「只有文字」变成「有 3D」
@@ -1000,6 +1036,7 @@ async function generateSolution(btn: HTMLButtonElement): Promise<void> {
         stepIndex = -1 // 换了新题就回到「全部显示」，免得接着上一条的进度
         stopPlay()
         scene?.setScene(toRenderable(merged, solved.points, base))
+        refreshAnnotations()
         renderSolution(sol)
         autoSave(base, sol)
         say('')

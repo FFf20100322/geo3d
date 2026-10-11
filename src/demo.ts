@@ -105,4 +105,10 @@ export const DEMO_SOLUTION: unknown = {
     },
   ],
   answers: [],
+  // 三类角各来一个，方便一进 3D 就能验证弧画得对不对
+  angles: [
+    { kind: 'lineLine', p: ['A', 'B'], q: ['A', 'D'], value: '∠BAD = 90°' },
+    { kind: 'linePlane', line: ['A1', 'C'], plane: ['A', 'B', 'D'], value: 'A₁C 与底面 ≈35.26°' },
+    { kind: 'dihedral', edge: ['B', 'D'], inA: 'A1', inB: 'A', value: 'A₁-BD-A ≈54.74°' },
+  ],
 }
