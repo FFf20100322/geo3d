@@ -748,7 +748,7 @@ $('btn-demo').onclick = () => {
     pickDefaultMode()
     refreshAnnotations()
     renderSolution(sol)
-    $<HTMLButtonElement>('btn-generate').textContent = '重新生成'
+    $<HTMLButtonElement>('btn-generate').textContent = '重新解题'
     say('已载入内置示例。', 'ok')
     show('solution')
   } catch (e) {
@@ -853,7 +853,7 @@ function openRecord(r: HistoryRecord) {
         syncSceneChrome()
         stepIndex = -1
         stopPlay()
-        $<HTMLButtonElement>('btn-generate').textContent = '重新生成'
+        $<HTMLButtonElement>('btn-generate').textContent = '重新解题'
         if (r.solution) {
           renderSolution(r.solution)
           show('solution')
@@ -866,7 +866,7 @@ function openRecord(r: HistoryRecord) {
       console.warn('[geo3d] 这条存档的场景没能重新解出来', e)
     }
   }
-  $<HTMLButtonElement>('btn-generate').textContent = '生成 3D'
+  $<HTMLButtonElement>('btn-generate').textContent = '开始解题'
   show('text')
 }
 
@@ -916,7 +916,7 @@ async function ensureScene(problemText: string, extra: string): Promise<Scene | 
       pickDefaultMode()
       refreshAnnotations()
       syncSceneChrome()
-      $<HTMLButtonElement>('btn-generate').textContent = '重新生成'
+      $<HTMLButtonElement>('btn-generate').textContent = '重新解题'
       autoSave(parsed) // 同一条存档从「只有文字」变成「有 3D」
       return parsed
     } catch (e) {
@@ -952,7 +952,22 @@ async function runBuild(btn: HTMLButtonElement, then?: () => void): Promise<void
   }
 }
 
-$('btn-generate').onclick = () => runBuild($<HTMLButtonElement>('btn-generate'))
+/**
+ * 文字页上只剩一个按钮：建图形、推解题，然后直接进解题过程页。
+ * 图形是在这一步顺带建好的，所以解题过程页底部那个「看带辅助线的图形」是立刻能点的，不用再等。
+ */
+$('btn-generate').onclick = async () => {
+  const btn = $<HTMLButtonElement>('btn-generate')
+  // 已经推过一次就直接拿出来看，不必再花一次接口调用
+  if (currentSolution) {
+    renderSolution(currentSolution)
+    show('solution')
+    return
+  }
+  await runBuild(btn, () => {
+    void generateSolution(btn)
+  })
+}
 
 // ---- 解题过程 ----
 let currentSolution: Solution | undefined
@@ -1013,19 +1028,6 @@ function renderSolution(sol: Solution): void {
     }
 
     box.appendChild(el)
-  })
-}
-
-$('btn-solve').onclick = async () => {
-  // 已经推过一次就直接拿出来看，不必再花一次接口调用
-  if (currentSolution) {
-    renderSolution(currentSolution)
-    show('solution')
-    return
-  }
-  const btn = $<HTMLButtonElement>('btn-solve')
-  await runBuild(btn, () => {
-    void generateSolution(btn)
   })
 }
 
