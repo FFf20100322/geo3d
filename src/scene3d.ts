@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { CSS2DObject, CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRenderer.js'
 import { EDGES, FACES, VERTICES, selfCheck } from './geo'
+import { planeNormal } from './angle'
 import { edgeKey, type Renderable } from './scene'
 import type { Ray } from './drag'
 import type { AnnotationShape } from './annotation'
@@ -378,9 +379,47 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
     if (!all.length) return
     const box = new THREE.Box3().setFromPoints(all)
     const center = box.getCenter(new THREE.Vector3())
-    const radius = Math.max(box.getSize(new THREE.Vector3()).length() / 2, 0.5)
+    const size = box.getSize(new THREE.Vector3())
+    const radius = Math.max(size.length() / 2, 0.5)
     controls.target.copy(center)
-    const dir = new THREE.Vector3(1, 0.8, 1.2).normalize()
+
+    // 取景方向：找最大的那个面当「底面」，从它法向偏大约 40° 看过去。
+    //
+    // 试过两种不行的办法：
+    // ① 写死一个方向 —— 模型不一定把底面放在水平面上，真机上见过锥顶偏到左下方的图；
+    // ② 挑「投影面积最大」的方向 —— 对四棱锥来说那等于正对一个侧面，反而最扁、最不像立体。
+    // 按几何选才对：底面法向偏开一点，既看得到底面、也看得到侧面，这就是课本插图的视角。
+    let basePts: Vec3[] | null = null
+    let baseArea = 0
+    for (const f of r.faces) {
+      if (!f.pts || f.pts.length < 3) continue
+      const n = planeNormal(f.pts[0], f.pts[1], f.pts[2])
+      if (!n) continue
+      let area = 0
+      for (let i = 1; i + 1 < f.pts.length; i++) {
+        const [a, b, c] = [f.pts[0], f.pts[i], f.pts[i + 1]]
+        const u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]]
+        const v = [c[0] - a[0], c[1] - a[1], c[2] - a[2]]
+        const cr = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]]
+        area += Math.hypot(cr[0], cr[1], cr[2]) / 2
+      }
+      if (area > baseArea) {
+        baseArea = area
+        basePts = f.pts
+      }
+    }
+
+    let dir: THREE.Vector3
+    const bn = basePts ? planeNormal(basePts[0], basePts[1], basePts[2]) : null
+    if (bn) {
+      const n = new THREE.Vector3(bn[0], bn[1], bn[2]).normalize()
+      // 找一个与法向垂直的方向当「斜过去」的参照
+      const seed = Math.abs(n.y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0)
+      const tangent = new THREE.Vector3().crossVectors(n, seed).normalize()
+      dir = n.clone().addScaledVector(tangent, 0.85).normalize()
+    } else {
+      dir = new THREE.Vector3(1, 0.8, 1.2).normalize()
+    }
     camera.position.copy(center).addScaledVector(dir, radius * 2.9)
     // 近裁剪面设小、最近距离几乎不限，这样放大时能一路进到模型内部去看
     camera.near = radius / 2000

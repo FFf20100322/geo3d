@@ -154,9 +154,16 @@ const SCENE_SYSTEM = `你是高中立体几何的场景建模助手。用户给�
 
 要求：
 - 把题面里给出的每一个已知条件都翻译成约束，一条不漏，也一条不多。
-- 题面没说的绝对不要假设。不要因为「看起来像正方体」就补上所有棱相等 —— 那是编条件。
+- **你拿到的只有文字，这是正常的、也是完整的输入。** 没有配图不代表信息不全，
+  绝对不要因为「看不到图」就返回 unsupported。
+- 题面说了是什么立体（正方体、长方体、正四面体、正四棱锥……），这个**名称本身就已经确定了形状**，
+  按这个名称的完整定义去建：棱相等、对面平行、侧棱相等等等是该名称自带的性质，不算编条件。
+- 形状定下来之后，**尺寸没给就自己取一个方便的整数**（例如棱长 2）。尺寸只影响缩放、不影响形状。
+- 反过来，**题面没说的额外关系绝对不要假设**。例如不要因为「看起来像正方体」就给一条题面没提的
+  棱也写上相等；不要凭空补一条题面里没有的垂直。
 - edges 是要画出来的线段，faces 是要填色显示的多边形（顶点按顺序排，必须是真的共面）。
-- 如果题目的条件超出这八种约束能表达的范围，直接返回 {"unsupported":"说明是哪一条表达不了"}，不要硬凑。`
+- 只有「题面里明确写出的某个条件」确实不是这八种约束能表达的时候，才返回 {"unsupported":"…"}，
+  并说清是哪一条。**不要因为题目复杂、或觉得信息不足就退回 unsupported。**`
 
 /** 让模型产出一个场景 json。返回原始对象，解析与校验交给 scene.ts。 */
 export async function buildScene(problemText: string, extra: string, effort: 'low' | 'high' | 'max'): Promise<unknown> {
@@ -165,7 +172,7 @@ export async function buildScene(problemText: string, extra: string, effort: 'lo
     : `题目：\n${problemText}`
 
   let lastReason = '没有拿到可用结果'
-  for (let attempt = 1; attempt <= 2; attempt++) {
+  for (let attempt = 1; attempt <= 3; attempt++) {
     const data = (await request('/chat/completions', {
       model: MODEL,
       messages: [
@@ -174,21 +181,31 @@ export async function buildScene(problemText: string, extra: string, effort: 'lo
       ],
       response_format: { type: 'json_object' },
       reasoning_effort: effort,
-      max_tokens: 4000,
-    })) as { choices?: { message?: { content?: string } }[] }
+      // 额度要给够：推理档一高，思考过程本身就吃掉大量 token，
+      // 4000 的时候真机上出现过「思考没结束额度就用完、content 是空的」，
+      // 而那条路只会报「返回的内容不是合法 json」，看着像模型不会写 json，其实是被截断了。
+      max_tokens: 16000,
+    })) as {
+      choices?: { message?: { content?: string }; finish_reason?: string }[]
+    }
 
-    const content = data.choices?.[0]?.message?.content
+    const choice = data.choices?.[0]
+    const content = choice?.message?.content
     if (!content) {
-      lastReason = '接口返回了空内容'
+      // 把「为什么空」记进错误信息里，否则真机上只能看到一个笼统的失败
+      lastReason =
+        choice?.finish_reason === 'length'
+          ? `${effort} 档思考没结束就用完了额度（内容被截断）`
+          : `${effort} 档接口返回了空内容`
       continue
     }
     try {
       return JSON.parse(content)
     } catch {
-      lastReason = '返回的内容不是合法 json'
+      lastReason = `${effort} 档返回的内容不是合法 json（长度 ${content.length}）`
     }
   }
-  throw new ApiError(`生成场景失败（${lastReason}）。`)
+  throw new ApiError(`生成场景失败：${lastReason}。`)
 }
 
 const SOLVE_SYSTEM = `你是高中数学立体几何的解题助手。用户给你题面，以及已经建好的图形里有哪些点。
@@ -255,7 +272,7 @@ export async function solveProblem(
     .join('\n\n')
 
   let lastReason = '没有拿到可用结果'
-  for (let attempt = 1; attempt <= 2; attempt++) {
+  for (let attempt = 1; attempt <= 3; attempt++) {
     const data = (await request('/chat/completions', {
       model: MODEL,
       messages: [
@@ -264,21 +281,24 @@ export async function solveProblem(
       ],
       response_format: { type: 'json_object' },
       reasoning_effort: effort,
-      max_tokens: 6000,
-    })) as { choices?: { message?: { content?: string } }[] }
+      // 与建模同理：高推理档下额度要留够，否则思考吃光额度、返回空内容
+      max_tokens: 20000,
+    })) as { choices?: { message?: { content?: string }; finish_reason?: string }[] }
 
-    const content = data.choices?.[0]?.message?.content
+    const choice = data.choices?.[0]
+    const content = choice?.message?.content
     if (!content) {
-      lastReason = '接口返回了空内容'
+      lastReason =
+        choice?.finish_reason === 'length' ? `${effort} 档思考没结束就用完了额度（内容被截断）` : `${effort} 档接口返回了空内容`
       continue
     }
     try {
       return JSON.parse(content)
     } catch {
-      lastReason = '返回的内容不是合法 json'
+      lastReason = `${effort} 档返回的内容不是合法 json（长度 ${content.length}）`
     }
   }
-  throw new ApiError(`生成解题过程失败（${lastReason}）。`)
+  throw new ApiError(`生成解题过程失败：${lastReason}。`)
 }
 
 export interface OcrResult {

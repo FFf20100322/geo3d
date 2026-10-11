@@ -27,7 +27,7 @@ import {
   type AnnotationShape,
 } from './annotation'
 import { createHistory, type HistoryRecord } from './history'
-import { DEMO_PROBLEM, DEMO_SCENE, DEMO_SOLUTION } from './demo'
+import { DEMO_PROBLEM, DEMO_SCENE, DEMO_SOLUTION, REALFLOW_PROBLEM } from './demo'
 import { checkFacesPlanar, edgeKey, faceKey, parseScene, toRenderable, type Scene } from './scene'
 // 显式带上 Highlight：名字与浏览器内置的那个同名类型撞车，不导入就会用错
 import { mountScene3d, type Highlight } from './scene3d'
@@ -629,18 +629,17 @@ function say(text: string, kind: '' | 'ok' | 'err' = '') {
   const el = $('status')
   el.textContent = text
   el.className = kind
-  // 自己消失。不消失的话它会一直压在最下面那排按钮上（这个是照着手机屏幕才发现的）。
-  // 出错的留久一点，免得一眨眼就错过了。
   if (statusTimer) clearTimeout(statusTimer)
-  if (text) {
-    statusTimer = window.setTimeout(
-      () => {
-        el.textContent = ''
-        el.className = ''
-      },
-      kind === 'err' ? 15000 : 5000,
-    )
-  }
+  if (!text) return
+  // 出错的信息**不自动消失**。
+  // 一开始给它留了 15 秒，看着挺久，可真机上一试就知道不够：
+  // 建模要跑几十秒，等回过神去看，那行字早就没了 —— 于是我根本不知道错在哪。
+  // 一个看不完就消失的错误提示，等于没有提示。让它留着，下次操作时自然被覆盖掉。
+  if (kind === 'err') return
+  statusTimer = window.setTimeout(() => {
+    el.textContent = ''
+    el.className = ''
+  }, 5000)
 }
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e))
@@ -992,9 +991,36 @@ $('btn-demo').onclick = () => {
   }
 }
 
+/**
+ * 直接输入题目文字，不用拍照。
+ *
+ * 用户明确要求「只有文字条件也能建模」—— 那就得有个不用照片的入口，
+ * 否则这条需求连测都没法测。这里只是把流程送到可编辑题面那一页，
+ * 后面走的是完全相同的一条路（建模 → 求解 → 回验 → 解题）。
+ */
+$('btn-type').onclick = () => {
+  $<HTMLTextAreaElement>('problem-text').value = REALFLOW_PROBLEM
+  $<HTMLTextAreaElement>('extra').value = ''
+  $('points').textContent = ''
+  $('uncertain').textContent = ''
+  currentThumb = undefined
+  currentRecordId = undefined
+  currentScene = undefined
+  currentSolution = undefined
+  sceneFromText = ''
+  solutionFromText = ''
+  stopPlay()
+  $<HTMLButtonElement>('btn-generate').textContent = '开始解题'
+  show('text')
+  say('已填入一道测试题。可以直接改，或全选替换成你自己的题目，然后点「开始解题」。')
+}
+
 $('btn-regen').onclick = () => {
   say('')
   $('photo-preview').innerHTML = ''
+  // 回到拍题页就是重新开始，按钮文案也要跟着回去 ——
+  // 不然上一题留下的「重新解题」会跟着新题一起出现，看着莫名其妙。
+  $<HTMLButtonElement>('btn-generate').textContent = '开始解题'
   show('photo')
 }
 
@@ -1119,7 +1145,13 @@ $('btn-clear-history').onclick = () => {
  * 模型出约束 → 本地算坐标 → 逐条回验 → 面还得真的共面。
  * 任何一步不过就升推理档重做，三档都不过就如实说建不出来 —— 绝不展示一张可能错的图。
  */
-const EFFORTS = ['low', 'high', 'max'] as const
+/**
+ * 建模与解题用的推理档，从低到高依次试。
+ *
+ * 用户要求优先用高档：低档省的那点时间，远不如「建出来的图是对的」重要 ——
+ * 这个项目的底线是宁拒不误，所以宁可慢一点、也要一次到位。
+ */
+const EFFORTS = ['high', 'max'] as const
 
 /** 已经建过图就直接用，没建过就现建。解题过程需要知道图里有哪些点，所以绕不开这一步。 */
 async function ensureScene(problemText: string, extra: string): Promise<Scene | null> {
