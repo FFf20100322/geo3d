@@ -418,54 +418,35 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
 
   /** 单击（而不是拖动或转视角）时，点到的那个面切换显隐 */
   let tapStart: { x: number; y: number; t: number } | null = null
-  /** 刚在哪儿藏了哪个面。同一个位置再点一下就恢复它。 */
-  let lastHide: { key: string; x: number; y: number; t: number } | null = null
   const faceRaycaster = new THREE.Raycaster()
 
-  function raycastFaces(x: number, y: number, onlyVisible: boolean): string | null {
+  /**
+   * 找出这条视线方向上离屏幕最近的那个面 —— 不管它是开着还是关着。
+   *
+   * 这是面显隐的关键规矩：**不允许透过一个面去点它后面的面**。
+   * 好处是「再点一次就恢复」自然成立：同一个位置再点，命中的仍然是同一个面，
+   * 于是原路切回来。早先的写法只朝「还看得见的面」打射线，藏掉一个之后
+   * 射线就穿过去打到了后面那个面，越点越少 —— 那是个 bug。
+   */
+  function nearestFaceAt(x: number, y: number): string | null {
     const r = renderer.domElement.getBoundingClientRect()
     ndc.set(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1)
     faceRaycaster.setFromCamera(ndc, camera)
     const meshes: THREE.Object3D[] = []
-    for (const entry of faceObjects.values()) {
-      if (entry.mesh.visible === onlyVisible) meshes.push(entry.mesh)
-    }
+    for (const entry of faceObjects.values()) meshes.push(entry.mesh)
     if (!meshes.length) return null
+    // intersectObjects 按距离从近到远返回，取第一个就是离屏幕最近的
     const hit = faceRaycaster.intersectObjects(meshes, false)[0]
     return (hit?.object.userData.faceKey as string | undefined) ?? null
   }
 
   function toggleFaceAt(x: number, y: number): void {
-    // 这一段临时留着，方便从手机日志里看它到底走了哪条分支
-    console.log(`[face] tap at ${x},${y} lastHide=${lastHide ? lastHide.key : 'none'} hidden=${[...hiddenFaces].join(',')}`)
-    // 同一个位置刚藏过一个面，再点就把它放回来。
-    // 不这么做的话，射线会打到被藏那个面后面压着的另一个面，于是越点越少 —— 这正是之前的 bug。
-    if (lastHide && Math.hypot(x - lastHide.x, y - lastHide.y) <= 28 && Date.now() - lastHide.t < 8000) {
-      hiddenFaces.delete(lastHide.key)
-      lastHide = null
-      applyFaceVisibility()
-      api.onFaceToggle?.()
-      return
-    }
-
-    const visibleHit = raycastFaces(x, y, true)
-    if (visibleHit) {
-      hiddenFaces.add(visibleHit)
-      lastHide = { key: visibleHit, x, y, t: Date.now() }
-      applyFaceVisibility()
-      api.onFaceToggle?.()
-      return
-    }
-
-    // 这里没有看得见的面 —— 可能是「全部隐藏」之后想单独放一个出来。
-    // 那就朝被藏起来的那些面打一枪，把打到的那一个放回来。
-    const hiddenHit = raycastFaces(x, y, false)
-    if (hiddenHit) {
-      hiddenFaces.delete(hiddenHit)
-      lastHide = null
-      applyFaceVisibility()
-      api.onFaceToggle?.()
-    }
+    const key = nearestFaceAt(x, y)
+    if (!key) return
+    if (hiddenFaces.has(key)) hiddenFaces.delete(key)
+    else hiddenFaces.add(key)
+    applyFaceVisibility()
+    api.onFaceToggle?.()
   }
 
   /** 放弃当前这次拖点，把控制权交还给轨道控制 */
@@ -572,15 +553,9 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
     // 转视角与拖点都会让手指移动，所以不会被误判成单击。
     const start = tapStart
     tapStart = null
-    if (!start || activePointers.size > 0) {
-      console.log(`[face] 不算单击：start=${!!start} 还有 ${activePointers.size} 根手指`)
-      return
-    }
+    if (!start || activePointers.size > 0) return
     if (Math.hypot(e.clientX - start.x, e.clientY - start.y) > 12) return
-    if (Date.now() - start.t > 600) {
-      console.log('[face] 不算单击：按太久')
-      return
-    }
+    if (Date.now() - start.t > 600) return
     toggleFaceAt(e.clientX, e.clientY)
   }
 
