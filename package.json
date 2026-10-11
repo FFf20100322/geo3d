@@ -17,7 +17,8 @@
     "democheck": "node src/demo.check.ts",
     "dragcheck": "node src/drag.check.ts",
     "symboliccheck": "node src/symbolic.check.ts",
-    "check": "node src/geo.check.ts && node src/solver.check.ts && node src/text.check.ts && node src/scene.check.ts && node src/history.check.ts && node src/solution.check.ts && node src/demo.check.ts && node src/drag.check.ts && node src/symbolic.check.ts && tsc --noEmit",
+    "anglecheck": "node src/angle.check.ts",
+    "check": "node src/geo.check.ts && node src/solver.check.ts && node src/text.check.ts && node src/scene.check.ts && node src/history.check.ts && node src/solution.check.ts && node src/demo.check.ts && node src/drag.check.ts && node src/symbolic.check.ts && node src/angle.check.ts && tsc --noEmit",
     "preview": "vite preview"
   },
   "dependencies": {
