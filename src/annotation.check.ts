@@ -2,6 +2,7 @@ import {
   arcShape,
   buildAnnotation,
   buildLength,
+  buildRatio,
   enumerateAngles,
   isRightAngle,
   setCentroid,
@@ -282,6 +283,35 @@ console.log('\n【长度标注：数值永远本地算，模型给的写法要�
 
   ok('两端重合时返回 null', buildLength({ p: ['A', 'A'] }, at, R) === null)
   ok('点不存在时返回 null', buildLength({ p: ['A', 'Z'] }, at, R) === null)
+}
+
+console.log('\n【比例标注：由点的定义直接推，不需要模型】')
+{
+  setCentroid(Object.values(P))
+  // 用图里真实存在的点当「被标比例的那个点」，否则 at() 取不到坐标、一律返回 null
+  const mid = buildRatio({ name: 'A1', kind: 'midpoint', of: ['A', 'B'] }, at, R)
+  ok('中点标成两段相等', mid?.text === 'AA₁ = A₁B', mid?.text ?? 'null')
+
+  const third = buildRatio({ name: 'B1', kind: 'ratio', of: ['A', 'B'], t: 1 / 3 }, at, R)
+  ok('三分点标成 1 : 2', third?.text === 'AB₁ : B₁B = 1 : 2', third?.text ?? 'null')
+
+  const half = buildRatio({ name: 'B1', kind: 'ratio', of: ['A', 'B'], t: 0.5 }, at, R)
+  ok('比例 0.5 也标成 1 : 1', half?.text === 'AB₁ : B₁B = 1 : 1', half?.text ?? 'null')
+
+  const quarter = buildRatio({ name: 'B1', kind: 'ratio', of: ['A', 'B'], t: 0.25 }, at, R)
+  ok('四分之一点标成 1 : 3', quarter?.text === 'AB₁ : B₁B = 1 : 3', quarter?.text ?? 'null')
+
+  const ugly = buildRatio({ name: 'B1', kind: 'ratio', of: ['A', 'B'], t: 0.37 }, at, R)
+  ok('约不出来的比例退回小数而不是硬凑', ugly?.text === 'AB₁ : B₁B = 0.37 : 0.63', ugly?.text ?? 'null')
+
+  ok('比例标注不画弧', mid?.arc.length === 0)
+  ok('标签离开了线段中点（不会压住线段）', mid !== null && d3(mid.labelAt, [1, 0, 0]) > R * 0.5)
+
+  // 没有「把线段分成几比几」这种说法的点，一律不标
+  ok('面内动点不标比例', buildRatio({ name: 'A', kind: 'inFace' }, at, R) === null)
+  ok('自由点不标比例', buildRatio({ name: 'A', kind: 'free' }, at, R) === null)
+  ok('垂足不标比例', buildRatio({ name: 'A', kind: 'perpFoot', of: ['B', 'C', 'D', 'A1'] }, at, R) === null)
+  ok('引用了不存在的端点时返回 null', buildRatio({ name: 'A1', kind: 'midpoint', of: ['A', 'ZZ'] }, at, R) === null)
 }
 
 console.log(`\n${failed === 0 ? '✓ 全部通过' : `✗ ${failed} 项未通过`}`)

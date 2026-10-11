@@ -1,4 +1,5 @@
 import { arcPoints, planeNormal, projectOnPlane } from './angle.ts'
+import { toDisplayName } from './scene.ts'
 import { parseExpr, verifySymbolic } from './symbolic.ts'
 import type { Vec3 } from './solver.ts'
 
@@ -448,6 +449,55 @@ export function setCentroid(points: Vec3[]): void {
     z += p[2]
   }
   centroid = [x / points.length, y / points.length, z / points.length]
+}
+
+/**
+ * 造一条比例标注（中点、分点）。
+ *
+ * 与长度、角度都不同：**比例完全不需要模型**，它由点的定义直接推出来 ——
+ * 一个点是中点，那它天然把线段分成 1:1；是分点 t，就分成 t:(1-t)。
+ * 所以这类标注值得自动带上，漏了反而是丢信息。
+ *
+ * 只有依赖某条线段的点才有比例可标（midpoint / ratio）；
+ * 面内动点、自由点、垂足这些没有「把线段分成几比几」的说法，一律不标。
+ */
+export function buildRatio(
+  def: { name: string; kind: string; of?: string[]; t?: number },
+  at: (name: string) => Vec3 | undefined,
+  offset: number,
+): AnnotationShape | null {
+  if (def.kind !== 'midpoint' && def.kind !== 'ratio') return null
+  const of = def.of
+  if (!of || of.length !== 2) return null
+  const [A, B] = of
+  const M = at(def.name)
+  if (!M || !at(A) || !at(B)) return null
+
+  // 名字一律转成显示形式（A1 → A₁）再拼进文字里。
+  // 不转的话，哪一层漏了规范化，标签上就会出现「AA1 = A1B」这种半成品。
+  const m = toDisplayName(def.name)
+  const a = toDisplayName(A)
+  const b = toDisplayName(B)
+  const text =
+    def.kind === 'midpoint'
+      ? `${a}${m} = ${m}${b}`
+      : `${a}${m} : ${m}${b} = ${ratioText(def.t ?? 0.5)}`
+
+  const away = unit(sub(M, centroid)) ?? [0, 0, 0]
+  return { arc: [], extras: [], labelAt: add(M, mul(away, offset)), text }
+}
+
+/** 把 0~1 的比例写成「1 : 2」这种整数比；实在写不成就退回小数 */
+function ratioText(t: number): string {
+  for (let q = 2; q <= 12; q++) {
+    const p = t * q
+    if (Math.abs(p - Math.round(p)) < 1e-6 && Math.round(p) > 0) {
+      const rest = q - Math.round(p)
+      if (rest <= 0) break
+      return `${Math.round(p)} : ${rest}`
+    }
+  }
+  return `${t.toFixed(2)} : ${(1 - t).toFixed(2)}`
 }
 
 /** 从场景与坐标里算出半径该取多大 —— 太小看不见，太大压到别的元素 */export function suggestRadius(points: Vec3[]): number {

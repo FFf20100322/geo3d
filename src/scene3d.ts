@@ -166,6 +166,7 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
   function setScene(r: Renderable) {
     group.clear()
     labelHost.innerHTML = '' // 换场景时清掉可能残留的标签 DOM
+    labelsDirty = true // 换了图要重新排一次标注
     edgeObjects = new Map()
     vertexObjects = new Map()
     faceObjects.clear()
@@ -230,6 +231,9 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
   function setPositions(pos: Record<string, Vec3>) {
     const moved = Object.keys(pos)
     if (!moved.length) return
+    // 不是用手指拖点（例如面板上的滑杆）时，位置一变就重排一次；
+    // 手指拖点那条路要按住，等松手再排 —— 那是用户明确要求的。
+    if (dragging === null) labelsDirty = true
     for (const name of moved) positions[name] = pos[name]
 
     for (const name of moved) {
@@ -330,6 +334,7 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
    * 每帧新建几何体与标签 DOM 在手机上会明显发卡。
    */
   function setAnnotations(list: AnnotationShape[]) {
+    labelsDirty = true
     while (slots.length > list.length) {
       const s = slots.pop()
       if (!s) break
@@ -413,7 +418,9 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
     }
     hint.textContent = problems.length
       ? `⚠ ${problems.join('；')}`
-      : '按住橙色点可直接拖动 · 单指旋转 · 双指缩放'
+      : labelProblems.length
+        ? `⚠ ${labelProblems.join('；')}`
+        : '按住橙色点可直接拖动 · 单指旋转 · 双指缩放'
   }
   window.addEventListener('resize', syncViewport)
 
@@ -422,6 +429,21 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
   // 直接在画布上监听是没用的 —— 同一元素上的监听器按注册顺序执行，抢不过先注册的 OrbitControls。
   let grabbables: string[] = []
   let dragging: string | null = null
+  /**
+   * 标注要不要重排。
+   *
+   * 用户要求角度标注**不要在拖动/旋转过程中实时重排**，停手之后算一次就行：
+   * 转的时候顺、也不会有标注乱跳。所以这个标记只在「交互结束」与
+   * 「图形本身变了且不是在拖点」时置起，拖动过程中一律按住。
+   */
+  /** 复用的临时向量：算标签世界坐标用，避免每帧新建对象 */
+  const tmpWorld = new THREE.Vector3()
+  let labelsDirty = true
+  /**
+   * 标注排完之后仍然重叠的地方。排完就把结果记在这里，由提示行显示出来 ——
+   * 「标注互相压住」在画面上看着只是字糊了，不报出来就没人知道是哪儿出的问题。
+   */
+  let labelProblems: string[] = []
   let activePointer: number | null = null
   /** 当前按在屏幕上的手指数。超过一根就一律让给缩放与转视角。 */
   const activePointers = new Set<number>()
@@ -580,6 +602,7 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
       controls.enabled = true
       host.releasePointerCapture?.(e.pointerId)
       tapStart = null // 拖过点就不算单击
+      labelsDirty = true // 手松了才重排一次
       api.onRelease?.(name)
       return
     }
@@ -622,8 +645,10 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
     for (const s of slots) {
       const el = s.label.element as HTMLElement
       if (el.style.display === 'none' || !el.textContent) continue
-      const p = s.label.position
-      const sc = screenOf([p.x, p.y, p.z])
+      // 必须用**世界坐标**：标签挂在 group 下，position 是局部坐标，
+      // 直接拿它去投影算出来的是错的位置 —— 表现就是「检测说没重叠、画面上却压着」。
+      s.label.getWorldPosition(tmpWorld)
+      const sc = screenOf([tmpWorld.x, tmpWorld.y, tmpWorld.z])
       items.push({ el, x: sc.x, y: sc.y, dx: 0, dy: 0, w: estimateWidth(el.textContent ?? '') })
     }
     if (items.length < 2 && !items.length) return
@@ -635,69 +660,97 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
       const el = labelEls.get(name)
       if (!el || el.style.display === 'none' || !el.textContent) continue
       if (el.style.visibility === 'hidden') continue
-      const p = obj.position
-      const sc = screenOf([p.x, p.y, p.z])
+      obj.getWorldPosition(tmpWorld)
+      const sc = screenOf([tmpWorld.x, tmpWorld.y, tmpWorld.z])
       fixed.push({ x: sc.x, y: sc.y, w: 30 })
     }
     if (items.length < 2 && !fixed.length) return
 
     const H = 28
-    const pushApart = (a: { x: number; y: number; dx: number; dy: number; w: number }, b: { x: number; y: number; w: number }) => {
-      const dx = b.x - (a.x + a.dx)
-      const dy = b.y - (a.y + a.dy)
-      const ox = (a.w + b.w) / 2 + 6 - Math.abs(dx)
-      const oy = H - Math.abs(dy)
-      if (ox <= 0 || oy <= 0) return
-      if (oy <= ox) {
-        const push = oy + 1
-        a.dy -= push * (dy >= 0 ? 1 : -1)
-      } else {
-        const push = ox + 1
-        a.dx -= push * (dx >= 0 ? 1 : -1)
-      }
-    }
+    const gap = 6
+    /** 这个位置能不能放下这个标签：既不压已占位的，也不压点标注 */
+    const free = (x: number, y: number, w: number, placed: { x: number; y: number; w: number }[]) =>
+      !placed.some((t) => Math.abs(t.x - x) < (t.w + w) / 2 + gap && Math.abs(t.y - y) < H + gap)
 
-    for (let iter = 0; iter < 8; iter++) {
-      // 先躲开固定的点标注
-      for (const it of items) for (const f of fixed) pushApart(it, f)
-      // 再互相推开
-      for (let i = 0; i < items.length; i++) {
-        for (let j = i + 1; j < items.length; j++) {
-          const a = items[i]
-          const b = items[j]
-          const dx = b.x + b.dx - (a.x + a.dx)
-          const dy = b.y + b.dy - (a.y + a.dy)
-          const ox = (a.w + b.w) / 2 + 6 - Math.abs(dx)
-          const oy = H - Math.abs(dy)
-          if (ox <= 0 || oy <= 0) continue
-          if (oy <= ox) {
-            const push = oy / 2 + 1
-            const s = dy >= 0 ? 1 : -1
-            a.dy -= push * s
-            b.dy += push * s
-          } else {
-            const push = ox / 2 + 1
-            const s = dx >= 0 ? 1 : -1
-            a.dx -= push * s
-            b.dx += push * s
+    // 确定性放置：每个标签沿着「以锚点为中心的同心环」由近到远找第一个放得下的位置。
+    //
+    // 之前用的是「两两互相推开、迭代若干轮」。标签少的时候能用，标签一多就不收敛、
+    // 会来回震荡（真机上看到六条标注又开始互相压）。换成一放定就不动：
+    // 既稳、又快，而且每个标签都落在离它描述的几何最近的那个可放位置。
+    const placed = fixed.map((f) => ({ x: f.x, y: f.y, w: f.w }))
+    for (const it of items) {
+      let best: { x: number; y: number } | null = null
+      for (let ring = 0; ring < 8 && !best; ring++) {
+        const r = ring * 34
+        const steps = ring === 0 ? 1 : 8
+        for (let k = 0; k < steps; k++) {
+          const ang = (k / steps) * Math.PI * 2 - Math.PI / 2
+          const x = it.x + Math.cos(ang) * r
+          const y = it.y + Math.sin(ang) * r
+          if (free(x, y, it.w, placed)) {
+            best = { x, y }
+            break
           }
         }
       }
+      // 八环之内都放不下就退回锚点：允许它压着，也好过把它甩到看不见的地方
+      if (!best) best = { x: it.x, y: it.y }
+      it.dx = best.x - it.x
+      it.dy = best.y - it.y
+      placed.push({ x: best.x, y: best.y, w: it.w })
     }
     for (const it of items) {
-      if (it.dx || it.dy) it.el.style.transform += ` translate(${it.dx.toFixed(1)}px, ${it.dy.toFixed(1)}px)`
+      // 位移必须用 margin，**不能用 style.transform**：
+      // CSS2DRenderer 每帧都会把 transform 重设成「居中 + 锚点位置」，
+      // 附加在后面的位移下一帧就被抹掉 —— 表现是「算出来排好了、画面上根本没动」。
+      // margin 它不碰，所以能稳稳地把标签挪开。
+      it.el.style.marginLeft = `${it.dx.toFixed(1)}px`
+      it.el.style.marginTop = `${it.dy.toFixed(1)}px`
     }
+
+    // 排完之后自己查一遍：还有几对标签是压着的？查不到就是排得干净。
+    let overlaps = 0
+    let worst = ''
+    for (let i = 0; i < items.length; i++) {
+      for (let j = i + 1; j < items.length; j++) {
+        const a = items[i]
+        const b = items[j]
+        const ax = a.x + a.dx
+        const ay = a.y + a.dy
+        const bx = b.x + b.dx
+        const by = b.y + b.dy
+        if (Math.abs(ax - bx) < (a.w + b.w) / 2 && Math.abs(ay - by) < H) {
+          overlaps++
+          if (!worst) worst = `${(a.el.textContent ?? '').slice(0, 6)} 与 ${(b.el.textContent ?? '').slice(0, 6)}`
+        }
+      }
+    }
+    labelProblems = overlaps ? [`有 ${overlaps} 对标注压在一起（${worst}）`] : []
   }
 
   const loop = () => {
     controls.update()
     renderer.render(scene, camera)
     labelRenderer.render(scene, camera)
-    // 角度/长度标签互相推开，并且躲开点标注。
-    // 点标注自己永远不隐藏 —— 用户定过「所有的点的标注必须常驻」，
-    // 所以冲突时让标注让位，而不是把点藏起来。
-    spreadAnnotLabels()
+    // 标注的摆放不每帧算：用户要求拖动/旋转过程中不要实时重排，停手之后算一次就行。
+    // 这样转起来顺，也不会看到标注在转动过程中乱跳。
+    if (labelsDirty) {
+      spreadAnnotLabels()
+      labelsDirty = false
+    }
   }
+
+  // 手一松就重排一次（拖动、旋转、缩放结束都算）
+  controls.addEventListener('end', () => {
+    labelsDirty = true
+  })
+
+  // 画布尺寸一变也要重排。这一条是必须的：挂载后的第一帧画布往往还没定尺寸
+  // （渲染区要让位给上下那些控件），那一帧所有标签会投影到同一个点、被挤成一堆；
+  // 而重排现在只在「需要时」发生，没有这个监听，那一堆错误位置就会一直留着。
+  new ResizeObserver(() => {
+    labelsDirty = true
+  }).observe(host)
 
   setScene(demoScene())
 

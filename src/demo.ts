@@ -29,6 +29,8 @@ export const DEMO_SCENE = {
     { name: 'B', kind: 'free', at: [2, 0, 0] },
     { name: 'C', kind: 'free', at: [1, 0, 1.732] },
     { name: 'P', kind: 'free', at: [1, 1.633, 0.577] },
+    // 中点：用来验证「比例标注自动带上」——它不是模型给的，是由点的定义直接推出来的
+    { name: 'N', kind: 'midpoint', of: ['A', 'B'] },
     // 三个面内动点，各在一个侧面里，互相独立
     { name: 'E', kind: 'inFace', face: ['P', 'A', 'B'], u: 0.4, v: 0.3 },
     { name: 'F', kind: 'inFace', face: ['P', 'B', 'C'], u: 0.4, v: 0.3 },
@@ -49,6 +51,8 @@ export const DEMO_SCENE = {
     ['P', 'A'],
     ['P', 'B'],
     ['P', 'C'],
+    // N 是 AB 的中点：连一条中线，让这个点有来处，也顺带验证比例标注
+    ['P', 'N'],
     // 三个动点两两相连：把「它们张成的那个面」描出边来，不然半透明面太薄看不清
     ['E', 'F'],
     ['F', 'M'],

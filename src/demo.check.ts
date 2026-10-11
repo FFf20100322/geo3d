@@ -28,7 +28,7 @@ ok('题面不是空的', DEMO_PROBLEM.trim().length > 0)
 
 console.log('\n【场景：解析 → 求解 → 验算】')
 const scene = parseScene(DEMO_SCENE)
-ok('解析成功', scene.points.length === 7, `${scene.points.length} 个点`)
+ok('解析成功', scene.points.length === 8, `${scene.points.length} 个点`) // A B C P + 动点 E F M + 中点 N
 ok('四个三角形面 + 一个动点张成的面', scene.faces.length === 5)
 ok('四个侧面都是三角形', scene.faces.slice(0, 4).every((f) => f.length === 3))
 ok('识别出三个动点（没有别的）', scene.points.filter(isMoving).length === 3)

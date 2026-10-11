@@ -18,6 +18,7 @@ import {
   arcShape,
   buildAnnotation,
   buildLength,
+  buildRatio,
   enumerateAngles,
   setCentroid,
   suggestRadius,
@@ -197,6 +198,14 @@ function refreshAnnotations(): void {
       if (!L) continue
       if (L.verified === false) doubts.push(`${spec.label ?? spec.p.join('')}：${L.mismatch ?? '对不上'}`)
       currentAnnotations.push({ shape: L.shape, kind: 'length', tier: 1 })
+    }
+
+    // 比例标注：中点、分点天然把线段分成几比几，由点的定义直接推出，不需要模型。
+    // 用合并后的定义（辅助点也算），所以解题过程里新加的中点也会自动带上比例。
+    for (const def of sol ? mergeSolution(base, sol).points : base.points) {
+      if (!(def.name in pts)) continue
+      const R = buildRatio(def, at, radius * 0.75)
+      if (R) currentAnnotations.push({ shape: R, kind: 'ratio', tier: 1 })
     }
 
     // 第二档：本地枚举出来的其余角
