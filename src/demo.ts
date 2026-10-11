@@ -1,115 +1,116 @@
 /**
- * 内置示例题（当前这份是用来测动点的）。
+ * 内置测试题：正四面体（四个面全是三角形），把所有已做的功能都覆盖一遍。
  *
- * 两个用途：
- * 1. 不用拍照、不耗接口，随时能测界面：动点滑杆、联动、逐步高亮、辅助线动画。
- * 2. 当回归自检的种子 —— demo.check.ts 会把这道题从头跑一遍，任何一步坏掉都会当场失败。
+ * 它同时是两样东西：
+ * 1. 不用拍照、不耗接口就能试功能的入口；
+ * 2. 回归的种子 —— demo.check.ts 拿它把「动点、中位线、垂足、三类角度」这些性质钉死。
  *
- * 这道题在同一张图里放了两个互不干扰的动点：
- *   E 在棱 BC 上滑动（一个自由度）
- *   F 在侧面 ABB₁A₁ 内滑动（两个自由度）
+ * 覆盖到的功能清单：
+ *   - 三角形的面（四个面都是三角形，与四边形面走的是不同分支）
+ *   - 棱上动点 E（一个自由度）、面内动点 F（两个自由度），两者互相独立
+ *   - 中点派生的中位线 MN（两层依赖：E 类同，这里依赖 P、A、B）
+ *   - 垂足 O（P 在底面上的射影），带出「线面垂直」这种直角关系
+ *   - 解题步骤逐条画出辅助线（O 与 PO 是步骤里才出现的）
+ *   - 三类角度标注各一个；底面各处的直角由本地枚举补上
+ *
+ * 之前那道正方体双动点的测试题没有丢：它在 git 历史里（搜「正方体」即可找到，
+ * 例如引入三棱锥测试之前的最后一次提交）。不另存副本是因为副本会随时间失真，
+ * 而历史里的那一份永远是当时真实跑过的样子。
  */
 
-export const DEMO_PROBLEM = `在棱长为 2 的正方体 ABCD-A₁B₁C₁D₁ 中，
-点 E 在棱 BC 上运动，点 F 在侧面 ABB₁A₁ 内运动。
-（这道题是内置的测试题：拖动两个动点，看各自的联动线段是否独立变化。）`
+export const DEMO_PROBLEM = `在棱长为 2 的正四面体 PABC 中，底面 ABC 是正三角形，
+点 E 在棱 AB 上运动，点 F 在侧面 PAB 内运动。
+（这是内置的测试题：四个面都是三角形，含动点、中位线、垂足与三类角度标注。）`
 
-/** 棱长 2 的正方体，外加两个动点。坐标由本地求解器算，at 只是初值。 */
-export const DEMO_SCENE: unknown = {
+/** 底面的外接圆半径是 2/√3，高是 2√6/3 —— 这里只给近似初值，精确值由求解器算。 */
+export const DEMO_SCENE = {
   points: [
     { name: 'A', kind: 'free', at: [0, 0, 0] },
     { name: 'B', kind: 'free', at: [2, 0, 0] },
-    { name: 'D', kind: 'free', at: [0, 0, 2] },
-    { name: 'A1', kind: 'free', at: [0, 2, 0] },
-    { name: 'C', kind: 'offset', of: ['B', 'D', 'A'] },
-    { name: 'B1', kind: 'offset', of: ['B', 'A1', 'A'] },
-    { name: 'C1', kind: 'offset', of: ['C', 'A1', 'A'] },
-    { name: 'D1', kind: 'offset', of: ['D', 'A1', 'A'] },
-    // 动点一：在棱 BC 上滑动
-    { name: 'E', kind: 'onSegment', of: ['B', 'C'], t: 0.5 },
-    // 动点二：在侧面 ABB₁A₁ 内滑动
-    { name: 'F', kind: 'inFace', face: ['A', 'B', 'B1', 'A1'], u: 0.5, v: 0.5 },
-    // 三角形 AED 的中位线：M、N 分别是 AE、DE 的中点。
-    // 这两个点依赖动点 E，所以 E 一动、中位线整条跟着走 —— 正是要测的联动。
-    { name: 'M', kind: 'midpoint', of: ['A', 'E'] },
-    { name: 'N', kind: 'midpoint', of: ['D', 'E'] },
-  ],
-  edges: [
-    // 正方体的十二条棱
-    ['A', 'B'],
-    ['B', 'C'],
-    ['C', 'D'],
-    ['D', 'A'],
-    ['A1', 'B1'],
-    ['B1', 'C1'],
-    ['C1', 'D1'],
-    ['D1', 'A1'],
-    ['A', 'A1'],
-    ['B', 'B1'],
-    ['C', 'C1'],
-    ['D', 'D1'],
-    // 跟着 E 动的线段：只在 E 移动时变化
-    ['A', 'E'],
-    ['D', 'E'],
-    // 三角形 AED 的中位线
-    ['M', 'N'],
-    // 跟着 F 动的线段：只在 F 移动时变化
-    ['A', 'F'],
-    ['B', 'F'],
-    ['A1', 'F'],
-  ],
-  faces: [
-    ['A', 'B', 'C', 'D'],
-    ['A1', 'B1', 'C1', 'D1'],
-    ['A', 'B', 'B1', 'A1'],
-    ['B', 'C', 'C1', 'B1'],
-    ['C', 'D', 'D1', 'C1'],
-    ['D', 'A', 'A1', 'D1'],
+    { name: 'C', kind: 'free', at: [1, 0, 1.732] },
+    { name: 'P', kind: 'free', at: [1, 1.633, 0.577] },
+    // 动点一：在棱 AB 上滑动，只有一个自由度
+    { name: 'E', kind: 'onSegment', of: ['A', 'B'], t: 0.5 },
+    // 动点二：在三角形面 PAB 内滑动，有左右与上下两个自由度
+    { name: 'F', kind: 'inFace', face: ['P', 'A', 'B'], u: 0.35, v: 0.35 },
+    // 三角形 PAB 的中位线：M、N 是 PA、PB 的中点，所以 MN ∥ AB
+    { name: 'M', kind: 'midpoint', of: ['P', 'A'] },
+    { name: 'N', kind: 'midpoint', of: ['P', 'B'] },
   ],
   constraints: [
     { kind: 'distance', a: 'A', b: 'B', value: 2 },
-    { kind: 'distance', a: 'A', b: 'D', value: 2 },
-    { kind: 'distance', a: 'A', b: 'A1', value: 2 },
-    { kind: 'perpendicular', p: ['A', 'B'], q: ['A', 'D'] },
-    { kind: 'perpendicular', p: ['A', 'B'], q: ['A', 'A1'] },
-    { kind: 'perpendicular', p: ['A', 'D'], q: ['A', 'A1'] },
+    { kind: 'distance', a: 'B', b: 'C', value: 2 },
+    { kind: 'distance', a: 'C', b: 'A', value: 2 },
+    { kind: 'distance', a: 'P', b: 'A', value: 2 },
+    { kind: 'distance', a: 'P', b: 'B', value: 2 },
+    { kind: 'distance', a: 'P', b: 'C', value: 2 },
+  ],
+  edges: [
+    ['A', 'B'],
+    ['B', 'C'],
+    ['C', 'A'],
+    ['P', 'A'],
+    ['P', 'B'],
+    ['P', 'C'],
+    // 中位线
+    ['M', 'N'],
+    // 跟着 E 动的线：只在 E 移动时变化
+    ['A', 'E'],
+    ['B', 'E'],
+    // 跟着 F 动的线：只在 F 移动时变化
+    ['P', 'F'],
+    ['A', 'F'],
+    ['B', 'F'],
+  ],
+  // 四个面全是三角形
+  faces: [
+    ['A', 'B', 'C'],
+    ['P', 'A', 'B'],
+    ['P', 'B', 'C'],
+    ['P', 'C', 'A'],
   ],
 }
 
-/** 两步：一步讲一个动点。步骤里的 uses 特意写了「棱」和「面」，用来验证高亮能覆盖到线面。 */
-export const DEMO_SOLUTION: unknown = {
+export const DEMO_SOLUTION = {
   steps: [
     {
-      title: '点 E 在棱 BC 上滑动',
-      text: 'E 被限制在棱 BC 上，只有一个自由度。移动它时，连到 A、D 的线段会跟着变，而 F 不受影响。',
+      title: '点 E 在棱 AB 上滑动',
+      text: 'E 被限制在棱 AB 上，只有一个自由度。移动它时，连到 A、B 的线段会跟着变，而 F 不受影响。',
       why: '动点在给定线段上运动',
       addPoints: [],
       addEdges: [],
-      uses: ['BC', 'E'],
+      uses: ['AB', 'E'],
     },
     {
-      title: '点 F 在侧面 ABB₁A₁ 内滑动',
-      text: 'F 被限制在侧面 ABB₁A₁ 内部，有左右与上下两个自由度。移动它时，连到 A、B、A₁ 的线段会跟着变，而 E 不受影响。',
+      title: '点 F 在侧面 PAB 内滑动',
+      text: 'F 被限制在三角形 PAB 内部，有左右与上下两个自由度。移动它时，连到 P、A、B 的线段会跟着变，而 E 不受影响。',
       why: '动点在给定平面内运动',
       addPoints: [],
       addEdges: [],
-      uses: ['ABB1A1', 'F'],
+      uses: ['PAB', 'F'],
     },
     {
-      title: '看三角形 AED 的中位线 MN',
-      text: 'M、N 分别是 AE、DE 的中点，所以 MN 是三角形 AED 的中位线：它永远平行于 AD，长度也永远是 AD 的一半。拖动 E，可以看到 MN 整条跟着移动，但这两个性质始终不变。',
+      title: '看中位线 MN',
+      text: 'M、N 分别是 PA、PB 的中点，所以 MN 是三角形 PAB 的中位线：它永远平行于 AB，长度也永远是 AB 的一半。',
       why: '三角形中位线定理',
       addPoints: [],
       addEdges: [],
-      uses: ['MN', 'AD', 'A', 'D', 'E'],
+      uses: ['PA', 'PB', 'M', 'N', 'MN'],
+    },
+    {
+      title: '作高 PO，O 是 P 在底面上的射影',
+      text: '从 P 向底面 ABC 作垂线，垂足记为 O。因为正四面体是对称的，O 正好是底面正三角形的中心，并且 PO 垂直于底面内的每一条直线。',
+      why: '正四面体的对称性',
+      addPoints: [{ name: 'O', kind: 'perpFoot', of: ['P', 'A', 'B', 'C'] }],
+      addEdges: [['P', 'O']],
+      uses: ['A', 'B', 'C', 'O'],
     },
   ],
   answers: [],
-  // 三类角各来一个，方便一进 3D 就能验证弧画得对不对。
-  // value 会被本地算一遍来核对：对得上才用这个写法，对不上就退回本地算出的度数。
+  // 三类角各来一个。value 会被本地算一遍核对，对不上就退回本地算出的度数。
   angles: [
-    { kind: 'lineLine', p: ['A', 'B'], q: ['A', 'D'], label: '∠BAD', value: '90°', of: 'degrees' },
-    { kind: 'linePlane', line: ['A1', 'C'], plane: ['A', 'B', 'D'], label: 'A₁C 与底面所成角', value: '√6/3', of: 'cos' },
-    { kind: 'dihedral', edge: ['B', 'D'], inA: 'A1', inB: 'A', label: '二面角 A₁-BD-A', value: '√3/3', of: 'cos' },
+    { kind: 'linePlane', line: ['P', 'A'], plane: ['A', 'B', 'C'], label: 'PA 与底面所成角', value: '√3/3', of: 'cos' },
+    { kind: 'dihedral', edge: ['A', 'B'], inA: 'P', inB: 'C', label: '二面角 P-AB-C', value: '1/3', of: 'cos' },
+    { kind: 'lineLine', p: ['P', 'A'], q: ['P', 'B'], label: '∠APB', value: '60°', of: 'degrees' },
   ],
 }
