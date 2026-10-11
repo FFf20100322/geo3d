@@ -668,9 +668,16 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
 
     const H = 28
     const gap = 6
-    /** 这个位置能不能放下这个标签：既不压已占位的，也不压点标注 */
+    // 候选位置还必须落在可视区里。少了这一条，标注一多就会整片被推到屏幕外 ——
+    // 「全部」档下几十个角，屏幕上只剩一堆被切掉一半的字，等于没标。
+    const cr = renderer.domElement.getBoundingClientRect()
+    const padX = 10
+    const padY = 8
+    const inView = (x: number, y: number, w: number) =>
+      x - w / 2 >= padX && x + w / 2 <= cr.width - padX && y - H / 2 >= padY && y + H / 2 <= cr.height - padY
+    /** 这个位置能不能放下这个标签：在可视区内、不压已占位的、也不压点标注 */
     const free = (x: number, y: number, w: number, placed: { x: number; y: number; w: number }[]) =>
-      !placed.some((t) => Math.abs(t.x - x) < (t.w + w) / 2 + gap && Math.abs(t.y - y) < H + gap)
+      inView(x, y, w) && !placed.some((t) => Math.abs(t.x - x) < (t.w + w) / 2 + gap && Math.abs(t.y - y) < H + gap)
 
     // 确定性放置：每个标签沿着「以锚点为中心的同心环」由近到远找第一个放得下的位置。
     //

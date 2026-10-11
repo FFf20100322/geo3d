@@ -104,8 +104,10 @@ function syncSceneChrome(): void {
   $('mode-toggle').textContent = editMode ? '完成' : '调节'
 
   // 面板里现在放两样东西：动点的滑杆、以及元素清单。
-  // 元素清单总是有的，所以这个入口在调节模式下一直可用（不再只在有动点时出现）。
-  const canTune = onSceneView && editMode
+  // 但**没有真正的图形时一个都不给** —— 挂载后 3D 页会先放一个占位图形，
+  // 那时主程序手里还没有点/棱/面，面板打开会是空的、清单也列不出来。
+  // 与其给一个用不了的入口，不如先不显示。
+  const canTune = onSceneView && editMode && !!currentScene
   $('dyn-toggle').style.display = canTune && !dynOpen ? 'block' : 'none'
 
   const panelOpen = canTune && dynOpen
