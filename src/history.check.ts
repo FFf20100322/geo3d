@@ -4,7 +4,7 @@ import type { Scene } from './scene.ts'
 /**
  * 可运行的校验：本地存档。
  * 重点考岔路：重复保存要更新而不是新增、超上限要丢最旧的、存坏了不能把页面搞死、超配额要能降级重试。
- * 跑 `pnpm historycheck`。
+ * 跑 `node src/history.check.ts`。
  */
 
 let failed = 0

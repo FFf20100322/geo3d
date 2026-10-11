@@ -3,7 +3,7 @@ import { normalizeExpr, parseExpr, verifySymbolic } from './symbolic.ts'
 /**
  * 可运行的校验：符号值解析与反验。
  * 这一段是标注功能的地基 —— 角度、长度、答案都要先过它才允许显示，
- * 所以它自己必须先钉死。跑 `pnpm symboliccheck`。
+ * 所以它自己必须先钉死。跑 `node src/symbolic.check.ts`。
  */
 
 let failed = 0

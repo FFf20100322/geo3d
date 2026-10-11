@@ -6,7 +6,7 @@ import { verifySymbolic } from './symbolic.ts'
 /**
  * 可运行的校验：解题过程层。
  * 重点考两件事：辅助点必须算得出来（不许凭空插自由点），以及辅助点算出来的坐标真的对。
- * 跑 `pnpm solutioncheck`。
+ * 跑 `node src/solution.check.ts`。
  */
 
 let failed = 0

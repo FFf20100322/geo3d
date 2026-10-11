@@ -15,7 +15,7 @@ import type { Vec3 } from './solver.ts'
  *
  * 用棱长 2 的正方体当靶子 —— 它的所有角度都有初中就学过的标准答案，
  * 所以这里能拿真答案去比，而不是「算出来是什么就信什么」。
- * 跑 `pnpm anglecheck`。
+ * 跑 `node src/angle.check.ts`。
  */
 
 let failed = 0

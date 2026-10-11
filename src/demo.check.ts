@@ -6,7 +6,7 @@ import { isMoving, reevaluate, solve, type Vec3 } from './solver.ts'
 /**
  * 可运行的校验：把内置测试题（正四面体 + 三个面内动点）从头到尾跑一遍。
  * 它是回归的种子 —— 以后任何一次改动把这个测试题弄坏了，这里会当场失败。
- * 跑 `pnpm democheck`。
+ * 跑 `node src/demo.check.ts`。
  */
 
 let failed = 0

@@ -3,7 +3,7 @@ import { latexToPlain, normalizeMath, normalizeSubscripts } from './text.ts'
 /**
  * 可运行的校验：下标规范化。
  * 下标是立体几何题的命根子 —— A 和 A₁ 是两个不同的点，认丢了下标会让图形整个建错，
- * 而且约束仍然自洽、验算仍然通过，属于最难发现的那类错误。跑 `pnpm textcheck`。
+ * 而且约束仍然自洽、验算仍然通过，属于最难发现的那类错误。跑 `node src/text.check.ts`。
  */
 
 let failed = 0

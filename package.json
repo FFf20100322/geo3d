@@ -8,21 +8,9 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
-    "selfcheck": "node src/geo.check.ts",
-    "solvecheck": "node src/solver.check.ts",
-    "textcheck": "node src/text.check.ts",
-    "scenecheck": "node src/scene.check.ts",
-    "historycheck": "node src/history.check.ts",
-    "solutioncheck": "node src/solution.check.ts",
-    "democheck": "node src/demo.check.ts",
-    "dragcheck": "node src/drag.check.ts",
-    "symboliccheck": "node src/symbolic.check.ts",
-    "anglecheck": "node src/angle.check.ts",
     "check": "node src/geo.check.ts && node src/solver.check.ts && node src/text.check.ts && node src/scene.check.ts && node src/history.check.ts && node src/solution.check.ts && node src/demo.check.ts && node src/drag.check.ts && node src/symbolic.check.ts && node src/angle.check.ts && node src/annotation.check.ts && node src/elements.check.ts && tsc --noEmit",
     "preview": "vite preview",
-    "annotationcheck": "node src/annotation.check.ts",
-    "backup": "node tools/backup.mjs",
-    "elementscheck": "node src/elements.check.ts"
+    "backup": "node tools/backup.mjs"
   },
   "dependencies": {
     "three": "^0.180.0"

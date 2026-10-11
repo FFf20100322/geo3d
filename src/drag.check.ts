@@ -5,7 +5,7 @@ import type { Vec3 } from './solver.ts'
  * 可运行的校验：拖点用到的几何计算。
  * 这些函数决定「手指按在哪、拖到哪里」，错了会表现为「拖不动」或「拖飞了」，
  * 而这两种现象在真机上很难判断是哪里错的，所以先在这里钉死。
- * 跑 `pnpm dragcheck`。
+ * 跑 `node src/drag.check.ts`。
  */
 
 let failed = 0

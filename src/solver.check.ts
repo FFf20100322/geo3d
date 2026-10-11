@@ -3,7 +3,7 @@ import { type Constraint, type PointDef, type Vec3, solve } from './solver.ts'
 /**
  * 可运行的校验：用三道真实题目检验求解器。
  * 模型给的初值再歪，只要约束写对了，这里就必须算出正确的图形；算不出来就该失败。
- * 跑 `pnpm solvecheck`。
+ * 跑 `node src/solver.check.ts`。
  */
 
 let failed = 0

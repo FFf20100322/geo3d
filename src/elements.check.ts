@@ -2,7 +2,7 @@ import { buildElements, type Figure } from './elements.ts'
 import { faceKey, parseScene, toRenderable } from './scene.ts'
 
 /**
- * 可运行的校验：元素清单的数据层。跑 `pnpm elementscheck`。
+ * 可运行的校验：元素清单的数据层。跑 `node src/elements.check.ts`。
  *
  * 重点验一条：**清单里的棱、尤其是面的 key，必须和 3D 渲染层用的是同一个**。
  * 对不上就会出现「清单说面开着、图上关着」或者勾选框点了没反应，

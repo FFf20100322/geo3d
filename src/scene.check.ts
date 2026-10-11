@@ -4,7 +4,7 @@ import { solve, type Vec3 } from './solver.ts'
 /**
  * 可运行的校验：场景解析 + 全链路。
  * 用模型真实会返回的那种 json 走一遍「解析 → 求解 → 转渲染结构 → 验面共面」。
- * 跑 `pnpm scenecheck`。
+ * 跑 `node src/scene.check.ts`。
  */
 
 let failed = 0

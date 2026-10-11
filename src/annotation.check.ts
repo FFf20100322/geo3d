@@ -19,7 +19,7 @@ function angleKeyOf(spec: AngleSpec): string {
 /**
  * 可运行的校验：把「要标哪个角」翻译成「图上画什么」。
  * 仍然拿棱长 2 的正方体当靶子 —— 它的角度都有标准答案，能拿真答案比。
- * 跑 `pnpm annotationcheck`。
+ * 跑 `node src/annotation.check.ts`。
  */
 
 let failed = 0
