@@ -107,4 +107,10 @@ export const DEMO_SOLUTION = {
     { kind: 'dihedral', edge: ['A', 'B'], inA: 'P', inB: 'C', label: '二面角 P-AB-C', value: '1/3', of: 'cos' },
     { kind: 'lineLine', p: ['P', 'A'], q: ['P', 'B'], label: '∠APB', value: '60°', of: 'degrees' },
   ],
+  // 长度标注：一个固定值（顺便验「模型给的写法要过反验」），
+  // 一个是动点之间的长度（没有固定值，只显示本地算的数——拖点时会跟着变，正好演示实时重算）
+  lengths: [
+    { p: ['A', 'B'], label: 'AB', value: '2' },
+    { p: ['E', 'F'], label: 'EF' },
+  ],
 }

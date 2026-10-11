@@ -2,7 +2,7 @@ import type { PointDef } from './solver'
 // 带 .ts 后缀：这个模块要被 node 直接导入跑自检，值导入不给后缀会解析不到（类型导入会被剥离，所以那些可以不写）
 import { edgeKey, toDisplayName, type Scene } from './scene.ts'
 import { latexToPlain, normalizeMath, normalizeSubscripts } from './text.ts'
-import type { AngleSpec } from './annotation.ts'
+import type { AngleSpec, LengthSpec } from './annotation.ts'
 
 /**
  * 解题过程层。
@@ -47,6 +47,8 @@ export interface Solution {
   answers: { label: string; value: string }[]
   /** 这道题涉及、需要画弧标注的角度 */
   angles: AngleSpec[]
+  /** 需要在线段上标出来的长度 */
+  lengths: LengthSpec[]
 }
 
 const ANGLE_KINDS = ['lineLine', 'linePlane', 'dihedral'] as const
@@ -237,7 +239,17 @@ export function parseSolution(raw: unknown, scene: Scene): Solution {
 
   const angles = arr(raw.angles ?? [], 'angles').map((a, i) => parseAngle(a, i, ref))
 
-  return { steps, answers, angles }
+  // 长度：只说哪两个点之间、以及想显示的写法。数值一律由本地算，模型报的走反验。
+  const lengths: LengthSpec[] = arr(raw.lengths ?? [], 'lengths').map((x, i) => {
+    if (!isObj(x)) throw new SolutionError(`第 ${i + 1} 个长度不是对象`)
+    const p = arr(x.p, `第 ${i + 1} 个长度的两个端点`).map((y) => ref(y, '长度'))
+    if (p.length !== 2) throw new SolutionError(`第 ${i + 1} 个长度应该是两个点`)
+    const label = x.label === undefined ? undefined : readable(str(x.label, '长度的 label'))
+    const value = x.value === undefined ? undefined : str(x.value, '长度的 value')
+    return { p: p as [string, string], label, value }
+  })
+
+  return { steps, answers, angles, lengths }
 }
 
 /** 把解题过程里逐步新增的辅助元素并进场景，得到「带辅助线的完整图形」 */

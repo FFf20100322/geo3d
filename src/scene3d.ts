@@ -625,19 +625,127 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
 
     const W = 30
     const H = 22
-    const taken: { x: number; y: number }[] = []
+    // 角度/长度标签先占位：它们不能隐藏，所以优先级比点标注高。
+    // 不把它们的框先算进来，就会出现「点标注压着角度标签」——
+    // 那种叠加在图上看着像乱码，读不出是哪一条。
+    const taken: { x: number; y: number; w: number }[] = annotBoxes.map((b) => ({ ...b }))
     for (const it of items) {
-      const clash = taken.some((t) => Math.abs(t.x - it.x) < W && Math.abs(t.y - it.y) < H)
+      const clash = taken.some((t) => Math.abs(t.x - it.x) < (t.w + W) / 2 && Math.abs(t.y - it.y) < (22 + H) / 2)
       it.el.style.visibility = clash ? 'hidden' : 'visible'
-      if (!clash) taken.push({ x: it.x, y: it.y })
+      if (!clash) taken.push({ x: it.x, y: it.y, w: W })
+    }
+  }
+
+  /**
+   * 角度/长度标签推开之后各自占的位置与宽度，供点标注避让用。
+   *
+   * 宽度按文字长度估：这些标签长短差很多（「∠APB = 60°」和
+   * 「PA 与底面所成角 = √3/3」差三倍），用一个固定宽度的话，
+   * 长标签的中心离得远、判不出冲突，实际却盖住了旁边的点标注。
+   */
+  const annotBoxes: { x: number; y: number; w: number }[] = []
+
+  /** 估算一个标签在屏幕上的宽度：中日韩字符按一个字宽算，其余按半个 */
+  function estimateWidth(text: string): number {
+    let units = 0
+    for (const ch of text) units += /[\u3000-\u9fff\uff00-\uffef]/.test(ch) ? 1 : 0.6
+    return Math.max(36, units * 13 + 18)
+  }
+
+  /**
+   * 角度与长度标签互相压住时，在屏幕空间把它们推开。
+   *
+   * 与点标注的处理不同：点标注重叠时**隐藏**远的（点本身还在图上，名字丢了没关系），
+   * 而角度/长度标签**不能隐藏** —— 藏掉就等于把这条信息删了。所以这里是把它们互相推开。
+   * 推开量直接加在 CSS2DRenderer 设好的 transform 后面（CSS 变换可以叠加），
+   * 不动标签在世界里的位置，所以下一帧重新算也不会越推越偏。
+   */
+  function spreadAnnotLabels(): void {
+    const items: { el: HTMLElement; x: number; y: number; dx: number; dy: number; w: number }[] = []
+    for (const s of slots) {
+      const el = s.label.element as HTMLElement
+      if (el.style.display === 'none' || !el.textContent) continue
+      const p = s.label.position
+      const sc = screenOf([p.x, p.y, p.z])
+      items.push({ el, x: sc.x, y: sc.y, dx: 0, dy: 0, w: estimateWidth(el.textContent ?? '') })
+    }
+    if (items.length < 2 && !items.length) return
+
+    // 点的标注是不可移动的障碍物：用户要求「点标注必须常驻」，
+    // 所以遇到冲突时**让角度/长度标签去躲**，而不是把点藏掉。
+    const fixed: { x: number; y: number; w: number }[] = []
+    for (const [name, obj] of vertexObjects) {
+      const el = labelEls.get(name)
+      if (!el || el.style.display === 'none' || !el.textContent) continue
+      if (el.style.visibility === 'hidden') continue
+      const p = obj.position
+      const sc = screenOf([p.x, p.y, p.z])
+      fixed.push({ x: sc.x, y: sc.y, w: 30 })
+    }
+    if (items.length < 2 && !fixed.length) {
+      annotBoxes.length = 0
+      for (const it of items) annotBoxes.push({ x: it.x, y: it.y, w: estimateWidth(it.el.textContent ?? '') })
+      return
+    }
+
+    const H = 28
+    const pushApart = (a: { x: number; y: number; dx: number; dy: number; w: number }, b: { x: number; y: number; w: number }) => {
+      const dx = b.x - (a.x + a.dx)
+      const dy = b.y - (a.y + a.dy)
+      const ox = (a.w + b.w) / 2 + 6 - Math.abs(dx)
+      const oy = H - Math.abs(dy)
+      if (ox <= 0 || oy <= 0) return
+      if (oy <= ox) {
+        const push = oy + 1
+        a.dy -= push * (dy >= 0 ? 1 : -1)
+      } else {
+        const push = ox + 1
+        a.dx -= push * (dx >= 0 ? 1 : -1)
+      }
+    }
+
+    for (let iter = 0; iter < 8; iter++) {
+      // 先躲开固定的点标注
+      for (const it of items) for (const f of fixed) pushApart(it, f)
+      // 再互相推开
+      for (let i = 0; i < items.length; i++) {
+        for (let j = i + 1; j < items.length; j++) {
+          const a = items[i]
+          const b = items[j]
+          const dx = b.x + b.dx - (a.x + a.dx)
+          const dy = b.y + b.dy - (a.y + a.dy)
+          const ox = (a.w + b.w) / 2 + 6 - Math.abs(dx)
+          const oy = H - Math.abs(dy)
+          if (ox <= 0 || oy <= 0) continue
+          if (oy <= ox) {
+            const push = oy / 2 + 1
+            const s = dy >= 0 ? 1 : -1
+            a.dy -= push * s
+            b.dy += push * s
+          } else {
+            const push = ox / 2 + 1
+            const s = dx >= 0 ? 1 : -1
+            a.dx -= push * s
+            b.dx += push * s
+          }
+        }
+      }
+    }
+    annotBoxes.length = 0
+    for (const it of items) {
+      annotBoxes.push({ x: it.x + it.dx, y: it.y + it.dy, w: estimateWidth(it.el.textContent ?? '') })
+      if (it.dx || it.dy) it.el.style.transform += ` translate(${it.dx.toFixed(1)}px, ${it.dy.toFixed(1)}px)`
     }
   }
 
   const loop = () => {
     controls.update()
     renderer.render(scene, camera)
-    resolveLabelOverlap()
     labelRenderer.render(scene, camera)
+    // 顺序要紧：先让角度/长度标签互相推开并记下各自占的位置，
+    // 再据此决定哪些点标注要让位 —— 反过来的话点标注就不知道它们挪到哪了
+    spreadAnnotLabels()
+    resolveLabelOverlap()
   }
 
   setScene(demoScene())

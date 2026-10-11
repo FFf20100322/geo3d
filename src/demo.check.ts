@@ -140,6 +140,15 @@ console.log('\n【解题过程】')
   const sol = parseSolution(DEMO_SOLUTION, scene)
   ok('四步', sol.steps.length === 4, `实际 ${sol.steps.length}`)
   ok('第四步高亮了 EFM 这个面', sol.steps[3].uses.faces.some((f) => faceKey(f) === faceKey(['E', 'F', 'M'])))
+  // 长度标注：解析出来之后，引用的点必须都真的在图上
+  ok('解析出两条长度标注', sol.lengths.length === 2, `实际 ${sol.lengths.length}`)
+  ok(
+    '长度引用的点都真实存在',
+    (() => {
+      const names = new Set([...scene.points.map((p) => p.name), ...sol.steps.flatMap((s) => s.addPoints.map((p) => p.name))])
+      return sol.lengths.every((l) => l.p.every((n) => names.has(n)))
+    })(),
+  )
   const merged = mergeSolution(scene, sol)
   ok('这几步不产生新点', merged.points.length === scene.points.length)
   const again = solve(merged.points, merged.constraints)

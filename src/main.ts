@@ -17,7 +17,9 @@ import { buildElements } from './elements'
 import {
   arcShape,
   buildAnnotation,
+  buildLength,
   enumerateAngles,
+  setCentroid,
   suggestRadius,
   type AngleSpec,
   type AnnotationShape,
@@ -176,6 +178,8 @@ function refreshAnnotations(): void {
     const radius = suggestRadius(Object.values(pts))
     const at = (n: string) => pts[n]
     const used = new Set<string>()
+    // 长度标签要往「背离图形中心」的方向躲，所以先把中心算出来
+    setCentroid(Object.values(pts))
 
     // 第一档：模型指出的本题关键角
     for (const spec of sol?.angles ?? []) {
@@ -185,6 +189,14 @@ function refreshAnnotations(): void {
       // 模型报的值没通过反验：图上用的是本地算的数，但要让用户知道有这么回事
       if (a.verified === false) doubts.push(`${spec.label ?? '某个角'}：${a.mismatch ?? '对不上'}`)
       currentAnnotations.push({ shape: arcShape(a, radius), kind: spec.kind, tier: 1 })
+    }
+
+    // 长度标注：数值由本地算，模型给的写法过了反验才采用
+    for (const spec of sol?.lengths ?? []) {
+      const L = buildLength(spec, at, radius * 0.9)
+      if (!L) continue
+      if (L.verified === false) doubts.push(`${spec.label ?? spec.p.join('')}：${L.mismatch ?? '对不上'}`)
+      currentAnnotations.push({ shape: L.shape, kind: 'length', tier: 1 })
     }
 
     // 第二档：本地枚举出来的其余角

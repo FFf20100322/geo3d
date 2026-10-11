@@ -1,8 +1,10 @@
 import {
   arcShape,
   buildAnnotation,
+  buildLength,
   enumerateAngles,
   isRightAngle,
+  setCentroid,
   suggestRadius,
   type AngleSpec,
 } from './annotation.ts'
@@ -247,3 +249,40 @@ console.log('\n【本地枚举图上所有角】')
     return dh.inA !== dh.edge[0] && dh.inA !== dh.edge[1] && dh.inB !== dh.edge[0] && dh.inB !== dh.edge[1]
   })())
 }
+
+console.log('\n【长度标注：数值永远本地算，模型给的写法要过反验】')
+{
+  setCentroid(Object.values(P))
+  const ab = buildLength({ p: ['A', 'B'], label: 'AB' }, at, R)
+  ok('长度算得对（AB = 2）', ab !== null && Math.abs(ab.value - 2) < 1e-9, `${ab?.value}`)
+  ok('没给 value 时显示本地算的数', ab?.shape.text === 'AB = 2', ab?.shape.text)
+  ok('长度标注不画弧', ab?.shape.arc.length === 0)
+
+  // 标签要落在「线段中点再往外」的位置，不能压在线段本身上
+  const mid: Vec3 = [1, 0, 0]
+  ok(
+    '标签离开了线段中点（不会压住线段）',
+    ab !== null && d3(ab.shape.labelAt, mid) > R * 0.5,
+    `${ab ? d3(ab.shape.labelAt, mid).toFixed(3) : '-'}`,
+  )
+
+  const good = buildLength({ p: ['A', 'B'], label: 'AB', value: '2' }, at, R)
+  ok('模型报对了就用它的写法', good?.verified === true && good?.shape.text === 'AB = 2', good?.shape.text)
+
+  const bad = buildLength({ p: ['A', 'B'], label: 'AB', value: '3' }, at, R)
+  ok('模型报错了就退回本地数', bad?.verified === false && bad?.shape.text === 'AB = 2', bad?.shape.text)
+  ok('并且说明哪里对不上', !!bad?.mismatch, bad?.mismatch ?? '')
+
+  // 正方体体对角线 AC₁ = 2√3，用根号形式报，反验应当认它
+  const diag = buildLength({ p: ['A', 'C1'], label: 'AC₁', value: '2√3' }, at, R)
+  ok('根号形式的正确答案能通过（AC₁ = 2√3）', diag?.verified === true, diag?.mismatch ?? `值 ${diag?.value.toFixed(6)}`)
+
+  const diagBad = buildLength({ p: ['A', 'C1'], label: 'AC₁', value: '2√2' }, at, R)
+  ok('把根号写错会被拦下', diagBad?.verified === false, diagBad?.mismatch ?? '')
+
+  ok('两端重合时返回 null', buildLength({ p: ['A', 'A'] }, at, R) === null)
+  ok('点不存在时返回 null', buildLength({ p: ['A', 'Z'] }, at, R) === null)
+}
+
+console.log(`\n${failed === 0 ? '✓ 全部通过' : `✗ ${failed} 项未通过`}`)
+if (failed > 0) process.exit(1)
