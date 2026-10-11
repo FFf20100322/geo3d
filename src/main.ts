@@ -316,14 +316,21 @@ function spanBetween(a: string, b: string): number {
 }
 
 /**
- * 让 3D 渲染区域给上下两侧的控件让位。
+ * 让 3D 渲染区域给周围的浮动控件让位。
  * 读一次布局就能拿到实际高度，所以不必等下一帧。
- * 渲染区缩到中间那块，而不是让模型躲在面板后面。
+ *
+ * 顶部要让的不只是精确调节面板，还包括右上角那排按钮 —— 以前只算了面板，
+ * 结果正方体顶上的 A₁、B₁ 两个点标注正好落在按钮底下（这个是照着手机屏幕才看出来的）。
+ * 现在凡是浮在 3D 区上方的东西都把高度算进去，以后再加按钮也不会重犯。
  */
 function syncViewInset(): void {
-  const panel = $('dyn-panel')
-  const panelOpen = panel.style.display === 'flex'
-  const top = panelOpen ? panel.getBoundingClientRect().bottom + 10 : 0
+  let top = 0
+  for (const id of ['scene-tools', 'dyn-panel']) {
+    const el = $(id)
+    if (el.style.display === 'none') continue
+    const r = el.getBoundingClientRect()
+    if (r.height > 0) top = Math.max(top, r.bottom + 10)
+  }
 
   // 底部这些条子谁最高就以谁为准
   const tops: number[] = []

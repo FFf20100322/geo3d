@@ -1,7 +1,7 @@
 import type { PointDef } from './solver'
 // 带 .ts 后缀：这个模块要被 node 直接导入跑自检，值导入不给后缀会解析不到（类型导入会被剥离，所以那些可以不写）
 import { edgeKey, toDisplayName, type Scene } from './scene.ts'
-import { normalizeSubscripts } from './text.ts'
+import { latexToPlain, normalizeMath, normalizeSubscripts } from './text.ts'
 import type { AngleSpec } from './annotation.ts'
 
 /**
@@ -20,6 +20,15 @@ export interface Uses {
   edges: [string, string][]
   faces: string[][]
 }
+
+/**
+ * 解题步骤、依据、答案都要过这一道。
+ *
+ * 为什么：这些文字和你核对用的题面一样，都是模型自由写出来的，都可能原样吐 LaTeX。
+ * 题面早就接了这一道转换，但步骤和答案当时漏了 —— 于是题面干干净净、
+ * 一到解题过程里又是 \frac{1}{2}。同一个漏洞的另一个出口，补上。
+ */
+const readable = (s: string): string => normalizeMath(latexToPlain(s.trim()))
 
 export interface Step {
   title: string
@@ -171,9 +180,9 @@ export function parseSolution(raw: unknown, scene: Scene): Solution {
 
   for (const [i, s] of rawSteps.entries()) {
     if (!isObj(s)) throw new SolutionError(`第 ${i + 1} 步不是一个对象`)
-    const title = str(s.title, `第 ${i + 1} 步的 title`)
-    const text = str(s.text, `第 ${i + 1} 步的 text`)
-    const why = typeof s.why === 'string' ? s.why.trim() : ''
+    const title = readable(str(s.title, `第 ${i + 1} 步的 title`))
+    const text = readable(str(s.text, `第 ${i + 1} 步的 text`))
+    const why = typeof s.why === 'string' ? readable(s.why) : ''
 
     const addPoints: PointDef[] = []
     for (const raw of arr(s.addPoints ?? [], `第 ${i + 1} 步的辅助点`)) {
@@ -223,7 +232,7 @@ export function parseSolution(raw: unknown, scene: Scene): Solution {
 
   const answers = arr(raw.answers ?? [], 'answers').map((a, i) => {
     if (!isObj(a)) throw new SolutionError(`第 ${i + 1} 个答案写错了`)
-    return { label: str(a.label, '答案的 label'), value: str(a.value, '答案的 value') }
+    return { label: readable(str(a.label, '答案的 label')), value: readable(str(a.value, '答案的 value')) }
   })
 
   const angles = arr(raw.angles ?? [], 'angles').map((a, i) => parseAngle(a, i, ref))

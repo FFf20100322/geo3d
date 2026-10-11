@@ -1,6 +1,7 @@
 import { parseScene } from './scene.ts'
 import { mergeSolution, parseElementName, parseSolution, stepTimeline } from './solution.ts'
 import { solve, type Vec3 } from './solver.ts'
+import { verifySymbolic } from './symbolic.ts'
 
 /**
  * 可运行的校验：解题过程层。
@@ -28,6 +29,51 @@ function throws(label: string, fn: () => unknown, wantFragment: string) {
 
 const d3 = (a: Vec3, b: Vec3) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2])
 const near = (a: number, b: number) => Math.abs(a - b) < 1e-6
+
+console.log('【解题文字与答案也要把 LaTeX 转成能读的写法】')
+{
+  const scene = parseScene({
+    points: [
+      { name: 'A', kind: 'free', at: [0, 0, 0] },
+      { name: 'B', kind: 'free', at: [2, 0, 0] },
+      { name: 'C', kind: 'free', at: [0, 0, 2] },
+    ],
+    constraints: [
+      { kind: 'distance', a: 'A', b: 'B', value: 2 },
+      { kind: 'distance', a: 'A', b: 'C', value: 2 },
+      { kind: 'perpendicular', p: ['A', 'B'], q: ['A', 'C'] },
+    ],
+    edges: [
+      ['A', 'B'],
+      ['A', 'C'],
+      ['B', 'C'],
+    ],
+    faces: [['A', 'B', 'C']],
+  })
+  // 模型很爱这样写：分数、根号、绝对值全用 LaTeX
+  const sol = parseSolution(
+    {
+      steps: [
+        {
+          title: '由 $\\frac{1}{2}AB$ 得',
+          text: '因为 $\\frac{1}{2}|AB|=\\sqrt{2}$，所以 $\\triangle ABC$ 中 $\\angle A=90^\\circ$。',
+          why: '$\\frac{a}{b}$ 形式',
+          addPoints: [],
+          addEdges: [],
+          uses: ['A'],
+        },
+      ],
+      answers: [{ label: '(1)', value: '$\\frac{\\sqrt{3}}{6}$' }],
+    },
+    scene,
+  )
+  const s = sol.steps[0]
+  ok('步骤标题里的分数被转开', s.title === '由 1/2AB 得', s.title)
+  ok('步骤正文里的根号与三角形被转开', s.text === '因为 1/2|AB|=√(2)，所以 △ABC 中 ∠A=90°。', s.text)
+  ok('依据里的 LaTeX 也被转开', s.why === 'a/b 形式', s.why)
+  ok('答案里的 LaTeX 被转成可读写法', sol.answers[0].value === '√(3)/6', sol.answers[0].value)
+  ok('转完之后仍然是合法的符号式（反验还能用）', verifySymbolic(sol.answers[0].value, Math.sqrt(3) / 6).ok)
+}
 
 // 棱长 2 的正方体，供后面所有用例复用
 const rawScene = {
