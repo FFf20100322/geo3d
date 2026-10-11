@@ -133,6 +133,29 @@ geo / solver / text / scene / history / solution / demo / drag / symbolic / angl
 **注意**：截图不能用 `adb shell screencap -p /sdcard/x.png` 再 `adb pull`（那会在手机上留文件），
 也不能用 PowerShell 的 `>` 重定向接二进制（会做编码转换、PNG 损坏）。
 
+## 下一步：N2 元素清单（方案已定，可直接开工）
+
+**做什么**：3D 页把本题的点、棱、面列成一个可点的清单；点一下在图上高亮，面那一栏带勾选框。
+
+**数据从哪来**（都已经现成，不必新算）：
+- 点：`currentScene.points`（含 `isMoving` 判断哪些是动点）
+- 棱：`currentEdges`（`[string,string][]`）
+- 面：`currentFaces`（`string[][]`，用 `faceKey` 得到面名）
+- 坐标：`currentSolvedAll`
+
+**必须守住的一条**：清单里面的勾选框与 3D 里单击面，**是同一份显隐状态**。
+所以不能各记各的，要让 scene3d 暴露「某个面现在是不是隐藏的」，清单只读它、只改它。
+不这么做就会出现「清单显示开着、图上面是关的」这种自相矛盾。
+（scene3d 现在已有 `hiddenFaces` 与 `setAllFaces/allFacesHidden`，把它扩成
+ `isFaceHidden(key)` 与 `setFaceHidden(key, on)` 即可，逻辑不用重写。）
+
+**摆放位置**：清单属于「调」模式的东西，跟精确调节同级；
+按铁律 6，加之前先确认顶部那一排（面 / 精确调节 / 标注 / 完成）不会被挤爆 —— 大概率要
+放进一个可展开的面板，而不是再添一个并排按钮。
+
+**自检**：清单渲染是 DOM，没法在 node 里测；但可以测「生成清单数据」这一层
+（点/棱/面的条目、名字用的是显示名、动点被标出来），把它做成纯函数放 `src/elements.ts`。
+
 ## 铁律（都是踩过的坑）
 
 1. **绝不用命令行工具改编含中文的源码**，只用编辑工具。文件重写先写 `*.new.ts` 再 `Move-Item` 改名（改名不改编码）。
