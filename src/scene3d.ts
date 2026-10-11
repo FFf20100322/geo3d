@@ -52,6 +52,14 @@ export interface Scene3d {
   /** 拖动过程中持续触发，参数是手指发出的射线 */
   onDragRay: ((name: string, ray: Ray) => void) | null
   onRelease: ((name: string) => void) | null
+  /** 单击某个面把它关掉/打开之后触发，用来刷新界面上的按钮 */
+  onFaceToggle: (() => void) | null
+  /** 一键全部显示 / 全部隐藏 */
+  setAllFaces(on: boolean): void
+  /** 现在是不是所有面都被关掉了（按钮文案要用） */
+  allFacesHidden(): boolean
+  /** 这张图有没有面 */
+  hasFaces(): boolean
   /** 切换视图时可以顺手复位，避免上一条题的显示状态漏到这一条 */
   hasAux(): boolean
 }
@@ -96,7 +104,7 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
   const scene = new THREE.Scene()
   scene.background = new THREE.Color(0x0f1115)
 
-  const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 500)
+  const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.01, 500)
   camera.position.set(2.2, 1.8, 2.6)
 
   const controls = new OrbitControls(camera, renderer.domElement)
@@ -118,6 +126,13 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
   let auxEdges = new Set<string>()
   let auxPoints = new Set<string>()
   const faceObjects = new Map<string, { mesh: THREE.Mesh; color: number }>()
+  /** 被用户手动关掉的面。换图时清空，所以每次换图都是全显示。 */
+  const hiddenFaces = new Set<string>()
+
+  /** 把显隐规则重新落到每个面上。任何一次重建/高亮之后都要调一次。 */
+  function applyFaceVisibility() {
+    for (const [key, entry] of faceObjects) entry.mesh.visible = !hiddenFaces.has(key)
+  }
   const edgeEnds = new Map<string, [string, string]>()
   let positions: Record<string, Vec3> = {}
 
@@ -127,6 +142,7 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
     edgeObjects = new Map()
     vertexObjects = new Map()
     faceObjects.clear()
+    hiddenFaces.clear() // 换图就是全显示，别把上一张图关掉的面带到这一张
     edgeEnds.clear()
     auxEdges = new Set(r.edges.filter((e) => e.aux).map((e) => e.key))
     auxPoints = new Set(r.vertices.filter((v) => v.aux).map((v) => v.name))
@@ -153,8 +169,10 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
         }),
       )
       group.add(mesh)
+      mesh.userData.faceKey = f.key // 点面切换显隐时要靠它认回是哪个面
       faceObjects.set(f.key, { mesh, color: f.color })
     }
+    applyFaceVisibility()
 
     // 每条棱单独一个对象：辅助线要能按步骤逐条出现，就必须能单独控显隐
     for (const e of r.edges) {
@@ -324,10 +342,11 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
     controls.target.copy(center)
     const dir = new THREE.Vector3(1, 0.8, 1.2).normalize()
     camera.position.copy(center).addScaledVector(dir, radius * 2.9)
-    camera.near = radius / 100
+    // 近裁剪面设小、最近距离几乎不限，这样放大时能一路进到模型内部去看
+    camera.near = radius / 2000
     camera.far = radius * 200
     camera.updateProjectionMatrix()
-    controls.minDistance = radius * 0.8
+    controls.minDistance = radius * 0.01
     controls.maxDistance = radius * 12
     controls.update()
   }
@@ -397,6 +416,58 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
     return { origin: [o.x, o.y, o.z], dir: [d.x, d.y, d.z] }
   }
 
+  /** 单击（而不是拖动或转视角）时，点到的那个面切换显隐 */
+  let tapStart: { x: number; y: number; t: number } | null = null
+  /** 刚在哪儿藏了哪个面。同一个位置再点一下就恢复它。 */
+  let lastHide: { key: string; x: number; y: number; t: number } | null = null
+  const faceRaycaster = new THREE.Raycaster()
+
+  function raycastFaces(x: number, y: number, onlyVisible: boolean): string | null {
+    const r = renderer.domElement.getBoundingClientRect()
+    ndc.set(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1)
+    faceRaycaster.setFromCamera(ndc, camera)
+    const meshes: THREE.Object3D[] = []
+    for (const entry of faceObjects.values()) {
+      if (entry.mesh.visible === onlyVisible) meshes.push(entry.mesh)
+    }
+    if (!meshes.length) return null
+    const hit = faceRaycaster.intersectObjects(meshes, false)[0]
+    return (hit?.object.userData.faceKey as string | undefined) ?? null
+  }
+
+  function toggleFaceAt(x: number, y: number): void {
+    // 这一段临时留着，方便从手机日志里看它到底走了哪条分支
+    console.log(`[face] tap at ${x},${y} lastHide=${lastHide ? lastHide.key : 'none'} hidden=${[...hiddenFaces].join(',')}`)
+    // 同一个位置刚藏过一个面，再点就把它放回来。
+    // 不这么做的话，射线会打到被藏那个面后面压着的另一个面，于是越点越少 —— 这正是之前的 bug。
+    if (lastHide && Math.hypot(x - lastHide.x, y - lastHide.y) <= 28 && Date.now() - lastHide.t < 8000) {
+      hiddenFaces.delete(lastHide.key)
+      lastHide = null
+      applyFaceVisibility()
+      api.onFaceToggle?.()
+      return
+    }
+
+    const visibleHit = raycastFaces(x, y, true)
+    if (visibleHit) {
+      hiddenFaces.add(visibleHit)
+      lastHide = { key: visibleHit, x, y, t: Date.now() }
+      applyFaceVisibility()
+      api.onFaceToggle?.()
+      return
+    }
+
+    // 这里没有看得见的面 —— 可能是「全部隐藏」之后想单独放一个出来。
+    // 那就朝被藏起来的那些面打一枪，把打到的那一个放回来。
+    const hiddenHit = raycastFaces(x, y, false)
+    if (hiddenHit) {
+      hiddenFaces.delete(hiddenHit)
+      lastHide = null
+      applyFaceVisibility()
+      api.onFaceToggle?.()
+    }
+  }
+
   /** 放弃当前这次拖点，把控制权交还给轨道控制 */
   function cancelDrag(): void {
     if (dragging === null) return
@@ -441,6 +512,7 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
 
   function onPointerDown(e: PointerEvent) {
     if (replaying) return
+    tapStart = { x: e.clientX, y: e.clientY, t: Date.now() }
     activePointers.add(e.pointerId)
 
     // 两根以上的手指 = 用户在缩放或转视角，一律不拖点
@@ -483,14 +555,33 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
 
   function endDrag(e: PointerEvent) {
     activePointers.delete(e.pointerId)
-    if (dragging === null || e.pointerId !== activePointer) return
-    e.stopPropagation()
-    const name = dragging
-    dragging = null
-    activePointer = null
-    controls.enabled = true
-    host.releasePointerCapture?.(e.pointerId)
-    api.onRelease?.(name)
+
+    if (dragging !== null && e.pointerId === activePointer) {
+      e.stopPropagation()
+      const name = dragging
+      dragging = null
+      activePointer = null
+      controls.enabled = true
+      host.releasePointerCapture?.(e.pointerId)
+      tapStart = null // 拖过点就不算单击
+      api.onRelease?.(name)
+      return
+    }
+
+    // 没在拖点：判断这是不是一次干净的单击（手指几乎没动、时间也短）。
+    // 转视角与拖点都会让手指移动，所以不会被误判成单击。
+    const start = tapStart
+    tapStart = null
+    if (!start || activePointers.size > 0) {
+      console.log(`[face] 不算单击：start=${!!start} 还有 ${activePointers.size} 根手指`)
+      return
+    }
+    if (Math.hypot(e.clientX - start.x, e.clientY - start.y) > 12) return
+    if (Date.now() - start.t > 600) {
+      console.log('[face] 不算单击：按太久')
+      return
+    }
+    toggleFaceAt(e.clientX, e.clientY)
   }
 
   host.addEventListener('pointerdown', onPointerDown, { capture: true })
@@ -528,6 +619,15 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
     onGrab: null,
     onDragRay: null,
     onRelease: null,
+    onFaceToggle: null,
+    setAllFaces(on) {
+      hiddenFaces.clear()
+      // 「全部隐藏」就是把每个面都记成隐藏的；「全部显示」就是清空这张名单
+      if (!on) for (const key of faceObjects.keys()) hiddenFaces.add(key)
+      applyFaceVisibility()
+    },
+    allFacesHidden: () => faceObjects.size > 0 && hiddenFaces.size >= faceObjects.size,
+    hasFaces: () => faceObjects.size > 0,
     hasAux: () => auxEdges.size > 0 || auxPoints.size > 0,
     setActive(on: boolean) {
       // 切到别的界面时停掉渲染循环，省电也省得标签漏出来

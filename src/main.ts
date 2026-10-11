@@ -48,6 +48,8 @@ const history = createHistory(localStorage)
 // 拖点回调：按在动点上才触发，按在别处由渲染层交还给视角旋转
 if (scene) {
   scene.onDragRay = dragMoving
+  // 单击某个面之后刷新按钮文案（全部都关掉了就把按钮改成「面：全关」）
+  scene.onFaceToggle = () => syncSceneChrome()
 }
 
 /** 当前这张照片的缩略图，存历史时要用 */
@@ -106,6 +108,12 @@ function syncSceneChrome(): void {
   }
 
   $('player').style.display = onSceneView && editMode && currentSolution ? 'block' : 'none'
+
+  // 面的总开关：只在图上真有面时出现。点了单个面之后也要回到这里刷新文案。
+  const hasFaces = scene?.hasFaces() ?? false
+  $('face-toggle').style.display = onSceneView && hasFaces ? 'block' : 'none'
+  $('face-toggle').textContent = scene?.allFacesHidden() ? '面：全关' : '面：全开'
+
   updateAnnotButton()
   syncViewInset()
 }
@@ -673,6 +681,12 @@ $('nav-settings').onclick = () => {
 $('btn-back').onclick = () => show('photo')
 $('scene-caption').onclick = () => show(currentSolution ? 'solution' : 'text')
 $('mode-toggle').onclick = () => setEditMode(!editMode)
+// 一键把所有的面关掉 / 打开
+$('face-toggle').onclick = () => {
+  const hide = !(scene?.allFacesHidden() ?? false)
+  scene?.setAllFaces(!hide)
+  syncSceneChrome()
+}
 $('annot-toggle').onclick = () => {
   annotMode = (((annotMode + 1) % 3) as 0 | 1 | 2)
   scene?.setAnnotations(shownAnnotations())
