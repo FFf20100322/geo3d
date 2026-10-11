@@ -242,8 +242,12 @@ function updateAnnotButton(): void {
   btn.title = annotDoubts.length
     ? annotDoubts.join('\n')
     : '点一下切换：关 / 只画本题关键角 / 把图上所有角都画出来'
-  // 单位开关跟着标注一起出现：没有标注可看时它没有意义
-  $('unit-toggle').style.display = btn.style.display
+  // 单位开关跟着标注一起出现：没有标注可看时它没有意义。
+  // 文案也在这里统一同步 —— 只在点击时改文案的话，热更新保留 DOM 时
+  // 会出现「实际是角度制、按钮却写着 rad」这种自相矛盾。
+  const unit = $('unit-toggle')
+  unit.style.display = btn.style.display
+  unit.textContent = angleDisplay === 'degrees' ? '°' : 'rad'
 }
 
 /** 当前渲染场景里所有点的坐标，拖动动点时以它为基准重算 */
@@ -429,14 +433,65 @@ function renderElementSection(body: HTMLElement): void {
     return chips
   }
 
-  /** 点与棱：点一下切换选中，选中就高亮 */
+  /**
+   * 点一个元素就把它**以及所有与它相关的元素**一起选上。
+   *
+   * 为什么要有这层联动：光高亮一个点，用户还是看不出「这个点在图上参与了什么」。
+   * 而立体几何的重点恰恰在于关系 —— 哪个面含它、哪条棱连着它、哪些角用它。
+   * 点亮一整套关系，比只点亮一个孤零零的点有用得多。
+   */
+  const relatedOf = (kind: 'points' | 'edges', key: string): { points: string[]; edges: string[]; faces: string[] } => {
+    const pts: string[] = []
+    const eds: string[] = []
+    const fcs: string[] = []
+    if (kind === 'points') {
+      pts.push(key)
+      for (const [a, b] of currentEdges) {
+        if (a === key || b === key) {
+          eds.push(edgeKey(a, b))
+          pts.push(a, b)
+        }
+      }
+      for (const f of currentFaces) if (f.includes(key)) fcs.push(faceKey(f))
+      return { points: pts, edges: eds, faces: fcs }
+    }
+    const [a, b] = key.split('|')
+    pts.push(a, b)
+    eds.push(key)
+    for (const f of currentFaces) if (f.includes(a) && f.includes(b)) fcs.push(faceKey(f))
+    return { points: pts, edges: eds, faces: fcs }
+  }
+
+  /** 点与棱：点一下切换选中，选中就把它相关的一整套都高亮 */
   const toggleChip = (el: HTMLElement, kind: 'points' | 'edges', key: string) => {
     el.addEventListener('click', () => {
-      if (picked[kind].has(key)) picked[kind].delete(key)
-      else picked[kind].add(key)
-      el.classList.toggle('on', picked[kind].has(key))
+      const on = !picked[kind].has(key)
+      const rel = on ? relatedOf(kind, key) : null
+      picked[kind].delete(key)
+      if (kind === 'points') {
+        for (const n of rel?.points ?? [key]) picked.points.delete(n)
+        for (const e of rel?.edges ?? []) picked.edges.delete(e)
+        for (const f of rel?.faces ?? []) picked.faces.delete(f)
+      } else {
+        for (const n of rel?.points ?? []) picked.points.delete(n)
+        for (const e of rel?.edges ?? [key]) picked.edges.delete(e)
+        for (const f of rel?.faces ?? []) picked.faces.delete(f)
+      }
+      if (on && rel) {
+        for (const n of rel.points) picked.points.add(n)
+        for (const e of rel.edges) picked.edges.add(e)
+        for (const f of rel.faces) picked.faces.add(f)
+      }
+      // 面板要整体重画：一格亮起来会连带好几格亮，只改点中那一格会对不上
+      dynRowsDirty = true
+      refreshSceneChromeSoon()
       applyStep()
     })
+  }
+
+  /** 面板里所有格子按当前选中状态重画（联动会一次影响好几格） */
+  function refreshSceneChromeSoon(): void {
+    renderDynRows(movingPoints())
   }
 
   if (list.points.length) {

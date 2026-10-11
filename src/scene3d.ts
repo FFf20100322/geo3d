@@ -413,10 +413,29 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
     const bn = basePts ? planeNormal(basePts[0], basePts[1], basePts[2]) : null
     if (bn) {
       const n = new THREE.Vector3(bn[0], bn[1], bn[2]).normalize()
+
+      // 法向的朝向是算出来的、正负都有可能，必须把它摆到「立体所在的那一侧」，
+      // 否则相机会跑到图形底下去 —— 真机上就见过从下往上看四棱锥，
+      // 顶点 P 被投影到底面四边形外面，整张图看不懂。
+      // 判据很直接：立体里总有点不在底面上，取离底面最远的那个点，
+      // 看在法向的正侧还是负侧，负侧就把法向翻过来。
+      const base0 = basePts![0]
+      const b0 = new THREE.Vector3(base0[0], base0[1], base0[2])
+      const rel = new THREE.Vector3()
+      let far = 0
+      for (const p of all) {
+        rel.set(p.x, p.y, p.z).sub(b0)
+        const d = rel.dot(n)
+        if (Math.abs(d) > Math.abs(far)) far = d
+      }
+      if (far < 0) n.negate()
+
       // 找一个与法向垂直的方向当「斜过去」的参照
       const seed = Math.abs(n.y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0)
       const tangent = new THREE.Vector3().crossVectors(n, seed).normalize()
-      dir = n.clone().addScaledVector(tangent, 0.85).normalize()
+      // 偏离法向多远：1.2 对应相机在底面上方约 40°，是「既看得到底面、也看得到侧面」的折中。
+      // 试过 0.85（约 50°，太靠上、高被压扁）与 2.0（约 27°，太贴底面）。
+      dir = n.clone().addScaledVector(tangent, 1.2).normalize()
     } else {
       dir = new THREE.Vector3(1, 0.8, 1.2).normalize()
     }
