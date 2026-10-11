@@ -49,9 +49,12 @@
       #pick-list button { text-align: left; line-height: 1.5; }
       #pick-list b { color: #7aa2ff; }
       #pick-list span { color: #98a2b3; font-size: 13px; }
-      #status { margin-top: 12px; font-size: 13px; min-height: 20px; }
-      #status.err { color: #ff7b72; }
-      #status.ok { color: #4ec9a5; }
+      /* 消息行必须是全局浮层：以前它长在拍题页里面，于是建模失败时用户在文字页什么都看不到，
+         只看到进度条闪一下就没动静了，根本不知道发生了什么。 */
+      #status { position: fixed; left: 12px; right: 12px; bottom: 16px; z-index: 40; margin: 0; padding: 10px 12px; border-radius: 10px; font-size: 13px; line-height: 1.5; background: rgba(20,26,34,.97); border: 1px solid #2b3442; box-shadow: 0 6px 20px rgba(0,0,0,.45); }
+      #status:empty { display: none; }
+      #status.err { color: #ff7b72; border-color: #5a2a2a; }
+      #status.ok { color: #4ec9a5; border-color: #24503f; }
       #uncertain:empty { display: none; }
       #uncertain { margin-top: 10px; padding: 10px 12px; border-radius: 10px; background: #2a2213; border: 1px solid #5a4a1d; font-size: 13px; }
 
@@ -156,7 +159,6 @@
       <div class="gap"></div>
       <button id="btn-demo" class="ghost">载入内置示例（不用拍照、不耗接口）</button>
       <div id="photo-preview"></div>
-      <p id="status"></p>
     </section>
 
     <section id="view-pick" class="view">
@@ -221,6 +223,7 @@
       <button id="btn-back" class="ghost">返回拍题</button>
     </section>
 
+    <p id="status"></p>
     <div id="progress">
       <div id="progress-head">
         <div id="progress-text"></div>

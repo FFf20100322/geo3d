@@ -991,6 +991,7 @@ async function runBuild(btn: HTMLButtonElement, then?: () => void | Promise<void
   try {
     await ensureScene(problemText, extra)
     setProgress(100, '图形已就绪')
+    say('图形已建好，这就是本题的立体图。', 'ok')
     // 图形一建好就进 3D：不管走哪条路，先把图给你看。
     // 要推解题的场合，解题在后台继续跑，推完再进解题过程页。
     show('3d')
@@ -1021,8 +1022,8 @@ $('btn-generate').onclick = async () => {
     show('solution')
     return
   }
-  await runBuild(btn, () => {
-    void generateSolution(btn)
+  await runBuild(btn, async () => {
+    await generateSolution(btn)
   })
 }
 
