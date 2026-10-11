@@ -418,10 +418,24 @@ function updateCaption(onScene: boolean) {
   cap.textContent = text.length > 46 ? `${text.slice(0, 46)}…` : text
 }
 
+let statusTimer: number | undefined
+
 function say(text: string, kind: '' | 'ok' | 'err' = '') {
   const el = $('status')
   el.textContent = text
   el.className = kind
+  // 自己消失。不消失的话它会一直压在最下面那排按钮上（这个是照着手机屏幕才发现的）。
+  // 出错的留久一点，免得一眨眼就错过了。
+  if (statusTimer) clearTimeout(statusTimer)
+  if (text) {
+    statusTimer = window.setTimeout(
+      () => {
+        el.textContent = ''
+        el.className = ''
+      },
+      kind === 'err' ? 15000 : 5000,
+    )
+  }
 }
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e))

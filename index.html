@@ -21,7 +21,7 @@
       #bar-title { font-weight: 650; margin-right: auto; font-size: 15px; }
       #bar button { padding: 7px 11px; font-size: 14px; border-color: transparent; border-radius: 8px; }
 
-      .view { position: fixed; inset: 0; padding: 64px 16px 24px; overflow-y: auto; background: #0f1115; display: none; z-index: 10; }
+      .view { position: fixed; inset: 0; padding: 64px 16px 84px; overflow-y: auto; background: #0f1115; display: none; z-index: 10; }
       .view.on { display: block; }
       .view h2 { font-size: 19px; margin: 4px 0 6px; }
       .muted { color: #98a2b3; font-size: 13px; }
@@ -50,8 +50,9 @@
       #pick-list b { color: #7aa2ff; }
       #pick-list span { color: #98a2b3; font-size: 13px; }
       /* 消息行必须是全局浮层：以前它长在拍题页里面，于是建模失败时用户在文字页什么都看不到，
-         只看到进度条闪一下就没动静了，根本不知道发生了什么。 */
-      #status { position: fixed; left: 12px; right: 12px; bottom: 16px; z-index: 40; margin: 0; padding: 10px 12px; border-radius: 10px; font-size: 13px; line-height: 1.5; background: rgba(20,26,34,.97); border: 1px solid #2b3442; box-shadow: 0 6px 20px rgba(0,0,0,.45); }
+         只看到进度条闪一下就没动静了，根本不知道发生了什么。
+         它不接收点击（pointer-events:none），否则会挡住下面的按钮；并且会自己消失。 */
+      #status { position: fixed; left: 12px; right: 12px; bottom: 16px; z-index: 40; margin: 0; padding: 10px 12px; border-radius: 10px; font-size: 13px; line-height: 1.5; background: rgba(20,26,34,.97); border: 1px solid #2b3442; box-shadow: 0 6px 20px rgba(0,0,0,.45); pointer-events: none; }
       #status:empty { display: none; }
       #status.err { color: #ff7b72; border-color: #5a2a2a; }
       #status.ok { color: #4ec9a5; border-color: #24503f; }
