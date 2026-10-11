@@ -58,6 +58,10 @@ export interface Scene3d {
   setAllFaces(on: boolean): void
   /** 现在是不是所有面都被关掉了（按钮文案要用） */
   allFacesHidden(): boolean
+  /** 某个面现在是不是被关掉了。元素清单只读它，不自己再记一份状态。 */
+  isFaceHidden(key: string): boolean
+  /** 开/关某个面。清单上的勾选框与图上单击面改的是同一份状态。 */
+  setFaceHidden(key: string, hidden: boolean): void
   /** 这张图有没有面 */
   hasFaces(): boolean
   /** 切换视图时可以顺手复位，避免上一条题的显示状态漏到这一条 */
@@ -666,6 +670,15 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
       applyFaceVisibility()
     },
     allFacesHidden: () => faceObjects.size > 0 && hiddenFaces.size >= faceObjects.size,
+    isFaceHidden: (key) => hiddenFaces.has(key),
+    setFaceHidden(key, hidden) {
+      // 清单上的勾选框走这条路。改完要通知界面，让「面：全开/全关」按钮与
+      // 清单上的回显一起刷新 —— 两处不同步就会出现「清单说开着、图上是关的」。
+      if (hidden) hiddenFaces.add(key)
+      else hiddenFaces.delete(key)
+      applyFaceVisibility()
+      api.onFaceToggle?.()
+    },
     hasFaces: () => faceObjects.size > 0,
     hasAux: () => auxEdges.size > 0 || auxPoints.size > 0,
     setActive(on: boolean) {

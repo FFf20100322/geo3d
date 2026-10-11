@@ -4,3 +4,4 @@ dist/
 .tmp/
 .phone/
 .tmp-commit-msg.txt
+.commitmsg

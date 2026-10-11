@@ -81,12 +81,23 @@
       #labels .pt.mov { color: #ffb84d; font-size: 18px; }
       #labels .angle-label { color: #6ee7ff; font-size: 13px; font-weight: 600; white-space: nowrap; text-shadow: 0 0 3px #000, 0 0 6px #000, 0 1px 2px #000; }
 
-      #dyn-panel { position: fixed; top: 104px; left: 12px; right: 12px; z-index: 16; display: none; flex-direction: column; padding: 10px 12px; border-radius: 10px; background: rgba(20,26,34,.94); border: 1px solid #2b3442; }
+      #dyn-panel, #elem-panel { position: fixed; top: 104px; left: 12px; right: 12px; z-index: 16; display: none; flex-direction: column; padding: 10px 12px; border-radius: 10px; background: rgba(20,26,34,.94); border: 1px solid #2b3442; }
       /* 内容自己滚，收起按钮钉在面板底部，不会被滚出去 */
-      #dyn-body { overflow-y: auto; max-height: 34vh; }
-      #dyn-collapse { flex: none; margin-top: 10px; width: 100%; padding: 8px; font-size: 13px; }
-      /* 顶栏右侧的模式切换与各面板入口 */
-      #scene-tools { position: fixed; top: 60px; right: 12px; z-index: 17; display: none; gap: 6px; }
+      #dyn-body, #elem-body { overflow-y: auto; max-height: 34vh; }
+      #elem-body .sec { margin: 10px 0 6px; font-size: 12px; color: #98a2b3; }
+      #elem-body .sec:first-child { margin-top: 0; }
+      #elem-body .items { display: flex; flex-wrap: wrap; gap: 6px; }
+      #elem-body .item { display: flex; align-items: center; gap: 6px; padding: 5px 9px; border: 1px solid #2b3442; border-radius: 8px; background: #141a22; font-size: 14px; cursor: pointer; }
+      /* 清单点中的那一项与图上的高亮是同一件事，颜色也用同一个（#ffd166） */
+      #elem-body .item.on { border-color: #ffd166; color: #ffd166; }
+      #elem-body .item.mov { color: #ffb84d; }
+      /* 被关掉的面在清单上必须看得出来，否则就成了「清单说开着、图上是关的」 */
+      #elem-body .item.off { color: #667085; }
+      #elem-body .item input { width: 20px; height: 20px; flex: none; margin: 0; accent-color: #2f6df6; }
+      #dyn-collapse, #elem-collapse { flex: none; margin-top: 10px; width: 100%; padding: 8px; font-size: 13px; }
+      /* 顶栏右侧的模式切换与各面板入口。按钮上的字数会变（例如「标注：全部(24) · 2项存疑」），
+         所以允许换行、靠右对齐，宁可换行也不能让按钮被挤出屏幕左边点不到。 */
+      #scene-tools { position: fixed; top: 60px; right: 12px; max-width: calc(100% - 24px); z-index: 17; display: none; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
       #scene-tools button { padding: 6px 10px; font-size: 13px; }
       /* 后台任务进度条。建模与解题都是多阶段的长任务，没有它就像卡死了。 */
       #progress { position: fixed; top: 56px; left: 12px; right: 12px; z-index: 30; display: none; padding: 8px 12px; border-radius: 10px; background: rgba(20,26,34,.94); border: 1px solid #2b3442; }
