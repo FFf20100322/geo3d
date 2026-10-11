@@ -22,7 +22,7 @@ ok('题面不是空的', DEMO_PROBLEM.trim().length > 0)
 
 console.log('\n【场景：解析 → 求解 → 验算】')
 const scene = parseScene(DEMO_SCENE)
-ok('解析成功', scene.points.length === 10, `${scene.points.length} 个点`)
+ok('解析成功', scene.points.length === 12, `${scene.points.length} 个点`)
 ok('识别出两个动点', scene.points.filter(isMoving).length === 2)
 ok('E 是线段上的动点', scene.points.some((p) => p.name === 'E' && p.kind === 'onSegment'))
 ok('F 是面内的动点', scene.points.some((p) => p.name === 'F' && p.kind === 'inFace'))
@@ -51,6 +51,56 @@ console.log('\n【动点一：E 在线段 BC 上】')
   ok('E 始终在 BC 上（BE + EC = 2）', near(d3(quarter['E'], quarter['B']) + d3(quarter['E'], quarter['C']), 2))
   ok('E 移动不影响 F', near(d3(quarter['F'], mid['F']), 0))
   ok('E 移动不影响正方体的棱长', near(d3(quarter['A'], quarter['B']), 2))
+}
+
+console.log('\n【中位线 MN：两层依赖，E 一动整条跟着走】')
+{
+  const at = (t: number) => {
+    const def = scene.points.find((p) => p.name === 'E')
+    if (def?.kind !== 'onSegment') throw new Error('E 不是线段动点')
+    def.t = t
+    return reevaluate(scene.points, solved.points)
+  }
+  /** 算出 MN 与 AD 的平行关系、以及两者长度 */
+  const probe = (t: number) => {
+    const p = at(t)
+    const v = (a: Vec3, b: Vec3): Vec3 => [b[0] - a[0], b[1] - a[1], b[2] - a[2]]
+    const cross = (u: Vec3, w: Vec3): Vec3 => [
+      u[1] * w[2] - u[2] * w[1],
+      u[2] * w[0] - u[0] * w[2],
+      u[0] * w[1] - u[1] * w[0],
+    ]
+    const mn = v(p['M'], p['N'])
+    const ad = v(p['A'], p['D'])
+    return {
+      p,
+      parallel: Math.hypot(...cross(mn, ad)) < 1e-9,
+      mnLen: Math.hypot(...mn),
+      adLen: Math.hypot(...ad),
+    }
+  }
+
+  const atStart = probe(0)
+  const atMiddle = probe(0.37)
+  const atEnd = probe(1)
+
+  ok('M 是 AE 的中点', near(d3(atMiddle.p['M'], atMiddle.p['A']), d3(atMiddle.p['M'], atMiddle.p['E'])))
+  ok('N 是 DE 的中点', near(atStart.p['N'][0], atStart.p['N'][0]) && near(d3(atStart.p['N'], atStart.p['D']), d3(atStart.p['N'], atStart.p['E'])))
+
+  // 中位线定理：无论 E 在哪，MN 都平行于 AD，且长度恒为 AD 的一半
+  ok('MN ∥ AD（E 在起点）', atStart.parallel)
+  ok('MN ∥ AD（E 在中间）', atMiddle.parallel)
+  ok('MN ∥ AD（E 在终点）', atEnd.parallel)
+  ok(
+    'MN 的长度恒为 AD 的一半',
+    near(atStart.mnLen, atStart.adLen / 2) && near(atMiddle.mnLen, atMiddle.adLen / 2) && near(atEnd.mnLen, atEnd.adLen / 2),
+    `三次分别 ${atStart.mnLen.toFixed(4)} / ${atMiddle.mnLen.toFixed(4)} / ${atEnd.mnLen.toFixed(4)}`,
+  )
+
+  // 联动本身：E 一动，M 和 N 都必须真的挪位置（不是只算了没传给渲染层）
+  ok('E 一动，M 跟着挪', d3(atStart.p['M'], atMiddle.p['M']) > 0.1)
+  ok('E 一动，N 跟着挪', d3(atMiddle.p['N'], atEnd.p['N']) > 0.1)
+  ok('中位线不会退化成一点', atStart.mnLen > 0.5 && atEnd.mnLen > 0.5)
 }
 
 console.log('\n【动点二：F 在侧面 ABB₁A₁ 内】')
@@ -84,7 +134,7 @@ console.log('\n【动点二：F 在侧面 ABB₁A₁ 内】')
 console.log('\n【解题过程：高亮要能覆盖线、面】')
 {
   const sol = parseSolution(DEMO_SOLUTION, scene)
-  ok('两步', sol.steps.length === 2, `实际 ${sol.steps.length}`)
+  ok('三步', sol.steps.length === 3, `实际 ${sol.steps.length}`)
   ok('第一步高亮了棱 BC', sol.steps[0].uses.edges.some(([a, b]) => a === 'B' && b === 'C'))
   ok('第一步也高亮了点 E', sol.steps[0].uses.points.includes('E'))
   ok('第二步高亮了面 ABB₁A₁', sol.steps[1].uses.faces.length === 1)

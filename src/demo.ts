@@ -29,6 +29,10 @@ export const DEMO_SCENE: unknown = {
     { name: 'E', kind: 'onSegment', of: ['B', 'C'], t: 0.5 },
     // 动点二：在侧面 ABB₁A₁ 内滑动
     { name: 'F', kind: 'inFace', face: ['A', 'B', 'B1', 'A1'], u: 0.5, v: 0.5 },
+    // 三角形 AED 的中位线：M、N 分别是 AE、DE 的中点。
+    // 这两个点依赖动点 E，所以 E 一动、中位线整条跟着走 —— 正是要测的联动。
+    { name: 'M', kind: 'midpoint', of: ['A', 'E'] },
+    { name: 'N', kind: 'midpoint', of: ['D', 'E'] },
   ],
   edges: [
     // 正方体的十二条棱
@@ -47,6 +51,8 @@ export const DEMO_SCENE: unknown = {
     // 跟着 E 动的线段：只在 E 移动时变化
     ['A', 'E'],
     ['D', 'E'],
+    // 三角形 AED 的中位线
+    ['M', 'N'],
     // 跟着 F 动的线段：只在 F 移动时变化
     ['A', 'F'],
     ['B', 'F'],
@@ -88,6 +94,14 @@ export const DEMO_SOLUTION: unknown = {
       addPoints: [],
       addEdges: [],
       uses: ['ABB1A1', 'F'],
+    },
+    {
+      title: '看三角形 AED 的中位线 MN',
+      text: 'M、N 分别是 AE、DE 的中点，所以 MN 是三角形 AED 的中位线：它永远平行于 AD，长度也永远是 AD 的一半。拖动 E，可以看到 MN 整条跟着移动，但这两个性质始终不变。',
+      why: '三角形中位线定理',
+      addPoints: [],
+      addEdges: [],
+      uses: ['MN', 'AD', 'A', 'D', 'E'],
     },
   ],
   answers: [],
