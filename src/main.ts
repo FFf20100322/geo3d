@@ -48,10 +48,48 @@ let currentRecordId: string | undefined
 let currentScene: Scene | undefined
 function show(v: ViewName | '3d') {
   for (const [name, el] of Object.entries(views)) el.classList.toggle('on', name === v)
-  scene?.setActive(v === '3d')
-  updateCaption(v === '3d')
-  refreshDynPanel(v === '3d')
-  $('player').style.display = v === '3d' && currentSolution ? 'block' : 'none'
+  onSceneView = v === '3d'
+  scene?.setActive(onSceneView)
+  updateCaption(onSceneView)
+  syncSceneChrome()
+}
+
+/** 当前是不是停在 3D 页 */
+let onSceneView = false
+
+/**
+ * 「看」与「调」两种模式。
+ * 3D 页要同时承担看模型、调参数、看解题步骤几件事，手机屏幕摆不下，
+ * 所以默认只留干净的画面加一条题面；点「调节」才把控制区唤出来，同时渲染区自动缩小让位。
+ */
+let editMode = false
+
+function setEditMode(on: boolean): void {
+  editMode = on
+  syncSceneChrome()
+}
+
+/** 3D 页上所有控件的显隐总调度。改这一页的版式只需要动这里。 */
+function syncSceneChrome(): void {
+  const moving = (currentScene?.points ?? []).filter(isMoving)
+  // 登记哪些点能被手指抓住（命中判定用的是实时坐标，拖完不用重新登记）
+  scene?.setGrabbables(moving.map((p) => p.name))
+
+  $('scene-tools').style.display = onSceneView ? 'flex' : 'none'
+  $('mode-toggle').textContent = editMode ? '完成' : '调节'
+
+  const canTune = onSceneView && editMode && moving.length > 0
+  $('dyn-toggle').style.display = canTune && !dynOpen ? 'block' : 'none'
+
+  const panelOpen = canTune && dynOpen
+  $('dyn-panel').style.display = panelOpen ? 'flex' : 'none'
+  if (panelOpen && dynRowsDirty) {
+    renderDynRows(moving)
+    dynRowsDirty = false
+  }
+
+  $('player').style.display = onSceneView && editMode && currentSolution ? 'block' : 'none'
+  syncViewInset()
 }
 
 /** 当前渲染场景里所有点的坐标，拖动动点时以它为基准重算 */
@@ -59,6 +97,8 @@ let currentSolvedAll: Record<string, Vec3> | undefined
 
 /** 动点面板：默认收起，主要交互是直接用手指拖；这里只是精确调节的备用入口 */
 let dynOpen = false
+/** 场景换过之后需要重建面板里的行 */
+let dynRowsDirty = true
 
 /** 面板里每一行都能把自己的显示值刷新一遍（拖动动点时用） */
 type PanelRow = { sync: () => void }
@@ -68,29 +108,8 @@ function syncPanelValues(): void {
   for (const r of panelRows) r.sync()
 }
 
-function refreshDynPanel(onScene = false): void {
-  const panel = $('dyn-panel')
+function renderDynRows(moving: ReturnType<typeof movingPoints>): void {
   const body = $('dyn-body')
-  const toggle = $('dyn-toggle')
-  const moving = (currentScene?.points ?? []).filter(isMoving)
-
-  // 登记哪些点能被手指抓住（命中判定用的是实时坐标，拖完不用重新登记）
-  scene?.setGrabbables(moving.map((p) => p.name))
-
-  if (!onScene || !moving.length) {
-    panel.style.display = 'none'
-    toggle.style.display = 'none'
-    syncViewInset()
-    return
-  }
-  // 展开时把入口按钮藏起来 —— 它和面板占同一块地方，留着会盖住第一个输入框
-  toggle.style.display = dynOpen ? 'none' : 'block'
-  if (!dynOpen) {
-    panel.style.display = 'none'
-    syncViewInset()
-    return
-  }
-  panel.style.display = 'flex'
   body.innerHTML = ''
   panelRows = []
 
@@ -174,10 +193,7 @@ function refreshDynPanel(onScene = false): void {
   for (const d of moving) {
     if (d.kind === 'onSegment') {
       const start = d.of[0]
-      const end = d.of[1]
-      const a = currentSolvedAll?.[start]
-      const b = currentSolvedAll?.[end]
-      const span = a && b ? Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) : 1
+      const span = spanBetween(start, d.of[1])
       paramRow({
         get: () => d.t,
         set: (p) => {
@@ -189,16 +205,27 @@ function refreshDynPanel(onScene = false): void {
         read: (p) => `${start}${d.name} = ${(p * span).toFixed(3)}　（占全长的 ${(p * 100).toFixed(1)}%）`,
       })
     } else if (d.kind === 'inFace') {
-      const faceName = d.face.join('')
+      /**
+       * 面内的点用「到两条边的距离」来表示，而不是内部那两个参数。
+       * 面的顶点按顺序是 V0V1V2(V3)：沿 V0→V1 挪，就是离边 V0V3 越来越远；
+       * 沿 V0→V3 挪，就是离边 V0V1 越来越远。这样填进去的数就是图上能量出来的长度。
+       */
+      const quad = d.face.length === 4
+      const along1 = quad ? [d.face[0], d.face[3]] : [d.face[0], d.face[2]]
+      const along2 = [d.face[0], d.face[1]]
+      const span1 = spanBetween(along1[0], along1[1])
+      const span2 = spanBetween(along2[0], along2[1])
+      const base = d.face.join('')
+
       paramRow({
         get: () => d.u,
         set: (p) => {
           d.u = p
         },
         min: 0,
-        max: 1,
-        label: `${d.name} 在面 ${faceName} 内 · 横向`,
-        read: (p) => `横向 ${p.toFixed(3)}`,
+        max: span1,
+        label: `${d.name} 在面 ${base} 内 · 距边 ${along1.join('')}`,
+        read: (p) => `距 ${along1.join('')} = ${(p * span1).toFixed(3)}　（面内横向 ${(p * 100).toFixed(1)}%）`,
       })
       paramRow({
         get: () => d.v,
@@ -206,24 +233,48 @@ function refreshDynPanel(onScene = false): void {
           d.v = p
         },
         min: 0,
-        max: 1,
-        label: `${d.name} 在面 ${faceName} 内 · 纵向`,
-        read: (p) => `纵向 ${p.toFixed(3)}`,
+        max: span2,
+        label: `${d.name} 在面 ${base} 内 · 距边 ${along2.join('')}`,
+        read: (p) => `距 ${along2.join('')} = ${(p * span2).toFixed(3)}　（面内纵向 ${(p * 100).toFixed(1)}%）`,
       })
     }
   }
+}
 
-  syncViewInset()
+/** 3D 页上的动点 */
+function movingPoints() {
+  return (currentScene?.points ?? []).filter(isMoving)
+}
+
+/** 两点之间的实际长度，用来把参数换算成可读的长度 */
+function spanBetween(a: string, b: string): number {
+  const p = currentSolvedAll?.[a]
+  const q = currentSolvedAll?.[b]
+  if (!p || !q) return 1
+  return Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]) || 1
 }
 
 /**
- * 让 3D 渲染区域给上方面板让位。
- * 读一次布局就能拿到面板的实际高度，所以不必等下一帧。
+ * 让 3D 渲染区域给上下两侧的控件让位。
+ * 读一次布局就能拿到实际高度，所以不必等下一帧。
+ * 渲染区缩到中间那块，而不是让模型躲在面板后面。
  */
 function syncViewInset(): void {
   const panel = $('dyn-panel')
-  const open = panel.style.display === 'flex'
-  scene?.setViewInset(open ? panel.getBoundingClientRect().bottom + 10 : 0)
+  const panelOpen = panel.style.display === 'flex'
+  const top = panelOpen ? panel.getBoundingClientRect().bottom + 10 : 0
+
+  // 底部这些条子谁最高就以谁为准
+  const tops: number[] = []
+  for (const id of ['player', 'scene-caption', 'hint']) {
+    const el = $(id)
+    if (el.style.display === 'none') continue
+    const r = el.getBoundingClientRect()
+    if (r.height > 0) tops.push(r.top)
+  }
+  const bottom = tops.length ? Math.max(0, window.innerHeight - Math.min(...tops) + 10) : 0
+
+  scene?.setViewInset(top, bottom)
 }
 
 /** 拖动滑杆时的专注模式：只留正在拖的那一条 */
@@ -479,14 +530,16 @@ $('nav-settings').onclick = () => {
 }
 $('btn-back').onclick = () => show('photo')
 $('scene-caption').onclick = () => show('text')
+$('mode-toggle').onclick = () => setEditMode(!editMode)
 $('dyn-toggle').onclick = () => {
   dynOpen = true
-  refreshDynPanel(true)
+  dynRowsDirty = true
+  syncSceneChrome()
 }
 // 收起按钮在面板底部：往上收
 $('dyn-collapse').onclick = () => {
   dynOpen = false
-  refreshDynPanel(true)
+  syncSceneChrome()
 }
 
 // ---- 设置页 ----
@@ -726,7 +779,8 @@ function openRecord(r: HistoryRecord) {
         const finalPoints = mergedSolved.ok ? mergedSolved.points : solved.points
         currentSolvedAll = { ...finalPoints }
         scene.setScene(toRenderable(merged, finalPoints, r.scene))
-        refreshDynPanel()
+        dynRowsDirty = true
+        syncSceneChrome()
         stepIndex = -1
         stopPlay()
         $<HTMLButtonElement>('btn-generate').textContent = '重新生成'
@@ -790,7 +844,8 @@ async function ensureScene(problemText: string, extra: string): Promise<Scene | 
       currentScene = parsed
       currentSolvedAll = { ...solved.points }
       scene?.setScene(render)
-      refreshDynPanel()
+      dynRowsDirty = true
+      syncSceneChrome()
       $<HTMLButtonElement>('btn-generate').textContent = '重新生成'
       autoSave(parsed) // 同一条存档从「只有文字」变成「有 3D」
       return parsed

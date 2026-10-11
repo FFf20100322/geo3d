@@ -43,7 +43,7 @@ export interface Scene3d {
    * 让位的方式是缩小渲染区域本身，而不是把模型藏在面板后面 ——
    * 否则调参数的时候根本看不见自己调的是什么。
    */
-  setViewInset(top: number): void
+  setViewInset(top: number, bottom: number): void
   /** 手指按在动点上时触发（这时不会旋转视角） */
   onGrab: ((name: string) => void) | null
   /** 拖动过程中持续触发，参数是手指发出的射线 */
@@ -256,10 +256,11 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
 
   // 相机宽高比、画布尺寸、标签层尺寸三者必须一致，否则会出现「字母和图错位」。
   let topInset = 0
+  let bottomInset = 0
   const syncViewport = () => {
     const w = window.innerWidth
-    // 上方面板占掉的那块要扣掉，渲染区域下移；至少要留 80 像素，否则面板一高就什么都看不见
-    const h = Math.max(80, window.innerHeight - topInset)
+    // 上下被控件占掉的那两块要扣掉，渲染区域缩到中间；至少留 80 像素
+    const h = Math.max(80, window.innerHeight - topInset - bottomInset)
     camera.aspect = w / h
     camera.updateProjectionMatrix()
     renderer.setSize(w, h)
@@ -360,10 +361,12 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
     setGrabbables: (names) => {
       grabbables = names
     },
-    setViewInset: (top) => {
-      const next = Math.max(0, Math.round(top))
-      if (next === topInset) return
-      topInset = next
+    setViewInset: (top, bottom) => {
+      const nextTop = Math.max(0, Math.round(top))
+      const nextBottom = Math.max(0, Math.round(bottom))
+      if (nextTop === topInset && nextBottom === bottomInset) return
+      topInset = nextTop
+      bottomInset = nextBottom
       syncViewport()
     },
     onGrab: null,

@@ -76,11 +76,13 @@
       #labels .pt.hl { color: #ffd166; font-size: 19px; }
       #labels .pt.mov { color: #ffb84d; font-size: 18px; }
 
-      #dyn-panel { position: fixed; top: 60px; left: 12px; right: 12px; z-index: 16; display: none; flex-direction: column; padding: 10px 12px; border-radius: 10px; background: rgba(20,26,34,.94); border: 1px solid #2b3442; }
+      #dyn-panel { position: fixed; top: 104px; left: 12px; right: 12px; z-index: 16; display: none; flex-direction: column; padding: 10px 12px; border-radius: 10px; background: rgba(20,26,34,.94); border: 1px solid #2b3442; }
       /* 内容自己滚，收起按钮钉在面板底部，不会被滚出去 */
-      #dyn-body { overflow-y: auto; max-height: 38vh; }
+      #dyn-body { overflow-y: auto; max-height: 34vh; }
       #dyn-collapse { flex: none; margin-top: 10px; width: 100%; padding: 8px; font-size: 13px; }
-      #dyn-toggle { position: fixed; top: 60px; right: 12px; z-index: 17; display: none; padding: 6px 10px; font-size: 13px; }
+      /* 顶栏右侧的模式切换与各面板入口 */
+      #scene-tools { position: fixed; top: 60px; right: 12px; z-index: 17; display: none; gap: 6px; }
+      #scene-tools button { padding: 6px 10px; font-size: 13px; }
       #dyn-panel .dyn-row + .dyn-row { margin-top: 12px; padding-top: 10px; border-top: 1px solid #222833; }
       #dyn-panel .dyn-top { display: flex; align-items: center; gap: 8px; }
       #dyn-panel label { flex: 1 1 auto; margin: 0; font-size: 13px; color: #cbd5e1; }
@@ -211,7 +213,10 @@
       <button id="btn-back" class="ghost">返回拍题</button>
     </section>
 
-    <button id="dyn-toggle" class="ghost">精确调节</button>
+    <div id="scene-tools">
+      <button id="dyn-toggle" class="ghost">精确调节</button>
+      <button id="mode-toggle" class="ghost">调节</button>
+    </div>
     <div id="dyn-panel">
       <div id="dyn-body"></div>
       <button id="dyn-collapse" class="ghost">▲ 收起</button>
