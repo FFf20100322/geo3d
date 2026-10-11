@@ -20,7 +20,8 @@
     "anglecheck": "node src/angle.check.ts",
     "check": "node src/geo.check.ts && node src/solver.check.ts && node src/text.check.ts && node src/scene.check.ts && node src/history.check.ts && node src/solution.check.ts && node src/demo.check.ts && node src/drag.check.ts && node src/symbolic.check.ts && node src/angle.check.ts && node src/annotation.check.ts && tsc --noEmit",
     "preview": "vite preview",
-    "annotationcheck": "node src/annotation.check.ts"
+    "annotationcheck": "node src/annotation.check.ts",
+    "backup": "node tools/backup.mjs"
   },
   "dependencies": {
     "three": "^0.180.0"
