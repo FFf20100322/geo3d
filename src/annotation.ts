@@ -66,7 +66,39 @@ const DEG = 180 / Math.PI
  * 模型报得出、且与本地算出来的一致，就用它的写法（例如 cos θ = √3/6）；
  * 报不出或者对不上，就退回本地算出的度数 —— 宁可难看，也不能显示一个可能错的数。
  */
-export function formatAngle(spec: AngleSpec, degrees: number): { text: string; verified?: boolean; mismatch?: string } {
+/**
+ * 把度数写成弧度制（π/3 这种）。
+ *
+ * 先试能不能写成 π 的简单有理倍：60° = π/3、45° = π/4、72° = 2π/5。
+ * 试不出来才退回小数 —— 硬凑成「0.33π」不如直接给数。
+ */
+export function radianText(degrees: number): string {
+  const r = (degrees * Math.PI) / 180
+  for (const n of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 15, 16]) {
+    const p = (r / Math.PI) * n
+    const k = Math.round(p)
+    if (k > 0 && Math.abs(p - k) < 1e-9) {
+      if (n === 1) return k === 1 ? 'π' : `${k}π`
+      return `${k === 1 ? '' : k}π/${n}`
+    }
+  }
+  return r.toFixed(3)
+}
+
+/** 角度按哪种单位显示。默认角度制 —— 课本、考卷、题目给的度数都是角度制 */
+export type AngleDisplay = 'degrees' | 'radians'
+
+/** 把算出来的度数写成要显示的那段文字 */
+export function degreeText(degrees: number, display: AngleDisplay): string {
+  if (display === 'radians') return radianText(degrees)
+  return Math.abs(degrees - Math.round(degrees)) < 0.005 ? `${Math.round(degrees)}°` : `${degrees.toFixed(2)}°`
+}
+
+export function formatAngle(
+  spec: AngleSpec,
+  degrees: number,
+  display: AngleDisplay = 'degrees',
+): { text: string; verified?: boolean; mismatch?: string } {
   const label = spec.label?.trim() ?? ''
   // 直角只画小方块、不写度数 —— 这是课本的规矩，也是让图不糊成一团的关键：
   // 正方体上有二十几个直角，每个都挂一行「90°」的话什么都看不见了。
@@ -74,12 +106,17 @@ export function formatAngle(spec: AngleSpec, degrees: number): { text: string; v
     const bad = checkValue(spec, degrees)
     return bad.verified === false ? { text: '', ...bad } : { text: '' }
   }
-  // 整度数不写小数点：60° 比 60.00° 干净得多
-  const degText = Math.abs(degrees - Math.round(degrees)) < 0.005 ? `${Math.round(degrees)}°` : `${degrees.toFixed(2)}°`
+  const degText = degreeText(degrees, display)
   const fallback = label ? `${label} = ${degText}` : degText
   if (!spec.value) return { text: fallback }
   const checked = checkValue(spec, degrees)
-  if (checked.verified) return { text: label ? `${label} = ${spec.value}` : (spec.value ?? ''), verified: true }
+  if (checked.verified) {
+    // 模型给的写法只在「与当前显示单位一致」时采用：
+    // 切成弧度制之后还挂着「60°」就前后矛盾了
+    const sameUnit = (spec.of ?? 'degrees') === 'degrees'
+    if (display === 'radians' && sameUnit) return { text: fallback }
+    return { text: label ? `${label} = ${spec.value}` : (spec.value ?? ''), verified: true }
+  }
 
   // 一位小数的度数写法（35.3 与 35.26）算通过，单独放行
   if ((spec.of ?? 'degrees') === 'degrees' && checked.verified === false) {
@@ -89,7 +126,7 @@ export function formatAngle(spec: AngleSpec, degrees: number): { text: string; v
     } catch {
       ok = false
     }
-    if (ok) return { text: label ? `${label} = ${spec.value}` : (spec.value ?? ''), verified: true }
+    if (ok && display === 'degrees') return { text: label ? `${label} = ${spec.value}` : (spec.value ?? ''), verified: true }
   }
   return { text: fallback, verified: false, mismatch: checked.mismatch }
 }
@@ -118,6 +155,7 @@ export function buildAnnotation(
   spec: AngleSpec,
   at: (name: string) => Vec3 | undefined,
   radius: number,
+  display: AngleDisplay = 'degrees',
 ): Annotation | null {
   const need = (name: string): Vec3 | null => at(name) ?? null
   /** 标签摆在两个方向的角平分线上、弧的外侧 */
@@ -157,7 +195,7 @@ export function buildAnnotation(
     if (!from || !to) return null
 
     const degrees = Math.acos(clamp(Math.abs(dot(from, to)), 0, 1)) * DEG
-    const fmt = formatAngle(spec, degrees)
+    const fmt = formatAngle(spec, degrees, display)
     return {
       vertex,
       dirFrom: from,
@@ -213,7 +251,7 @@ export function buildAnnotation(
     if (!to) return null
 
     const degrees = Math.asin(clamp(Math.abs(dot(from, n)), 0, 1)) * DEG
-    const fmt = formatAngle(spec, degrees)
+    const fmt = formatAngle(spec, degrees, display)
     return {
       vertex,
       dirFrom: from,
@@ -247,7 +285,7 @@ export function buildAnnotation(
   if (!dirA || !dirB) return null
 
   const degrees = Math.acos(clamp(dot(dirA, dirB), -1, 1)) * DEG
-  const fmt = formatAngle(spec, degrees)
+  const fmt = formatAngle(spec, degrees, display)
   return {
     vertex: P,
     dirFrom: dirA,
@@ -372,7 +410,24 @@ export function enumerateAngles(edges: [string, string][], faces: string[][]): A
       const other = na ? b : a
       const others = face.filter((p) => p !== vertex)
       if (others.length < 2) continue
-      out.push({ kind: 'linePlane', line: [vertex, other], plane: [others[0], others[1], others[2] ?? others[0]] })
+      // 平面名用完整的那个面，别用「去掉顶点之后剩下的点」——
+      // 三角形面去掉顶点只剩两个点，拼出来会是「BCB」这种不存在的面。
+      const plane: [string, string, string] =
+        face.length >= 3 ? [face[0], face[1], face[2]] : [face[0], face[1] ?? face[0], face[0]]
+      out.push({ kind: 'linePlane', line: [vertex, other], plane })
+    }
+  }
+
+  // 枚举出来的角也要有名字，否则「全部」档下就是一堆没有归属的数字。
+  // 记号按课本：线线角写 ∠ABC；线面角写 ∠(PA, 平面ABC)；二面角写 二面角 P-AB-C。
+  for (const a of out) {
+    if (a.kind === 'lineLine') {
+      const [v, x] = a.p
+      a.label = `∠${x}${v}${a.q[1]}`
+    } else if (a.kind === 'dihedral') {
+      a.label = `二面角 ${a.inA}-${a.edge[0]}${a.edge[1]}-${a.inB}`
+    } else {
+      a.label = `∠(${a.line[0]}${a.line[1]}, 平面${a.plane.join('')})`
     }
   }
 

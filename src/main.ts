@@ -17,6 +17,7 @@ import { buildElements } from './elements'
 import {
   arcShape,
   buildAnnotation,
+  type AngleDisplay,
   buildLength,
   buildRatio,
   enumerateAngles,
@@ -134,6 +135,8 @@ function syncSceneChrome(): void {
  */
 const ANNOT_LABELS = ['标注', '标注：重要', '标注：全部']
 let annotMode: 0 | 1 | 2 = 0
+/** 角度按哪种单位显示。默认角度制 —— 课本、考卷、题目给的度数都是角度制 */
+let angleDisplay: AngleDisplay = 'degrees'
 
 /** 当前图上画出来的棱与面，用来本地枚举角度 */
 let currentEdges: [string, string][] = []
@@ -184,7 +187,7 @@ function refreshAnnotations(): void {
 
     // 第一档：模型指出的本题关键角
     for (const spec of sol?.angles ?? []) {
-      const a = buildAnnotation(spec, at, radius)
+      const a = buildAnnotation(spec, at, radius, angleDisplay)
       if (!a) continue
       used.add(angleKey(spec))
       // 模型报的值没通过反验：图上用的是本地算的数，但要让用户知道有这么回事
@@ -213,7 +216,7 @@ function refreshAnnotations(): void {
       const key = angleKey(spec)
       if (used.has(key)) continue
       used.add(key)
-      const a = buildAnnotation(spec, at, radius)
+      const a = buildAnnotation(spec, at, radius, angleDisplay)
       if (!a) continue
       currentAnnotations.push({ shape: arcShape(a, radius), kind: spec.kind, tier: 2 })
     }
@@ -237,6 +240,8 @@ function updateAnnotButton(): void {
   btn.title = annotDoubts.length
     ? annotDoubts.join('\n')
     : '点一下切换：关 / 只画本题关键角 / 把图上所有角都画出来'
+  // 单位开关跟着标注一起出现：没有标注可看时它没有意义
+  $('unit-toggle').style.display = btn.style.display
 }
 
 /** 当前渲染场景里所有点的坐标，拖动动点时以它为基准重算 */
@@ -814,6 +819,14 @@ $('face-toggle').onclick = () => {
 }
 $('annot-toggle').onclick = () => {
   annotMode = (((annotMode + 1) % 3) as 0 | 1 | 2)
+  scene?.setAnnotations(shownAnnotations())
+  updateAnnotButton()
+}
+/** 角度制 / 弧度制。改了要把标注文字重算一遍（数值不变，只是写法不同） */
+$('unit-toggle').onclick = () => {
+  angleDisplay = angleDisplay === 'degrees' ? 'radians' : 'degrees'
+  $('unit-toggle').textContent = angleDisplay === 'degrees' ? '°' : 'rad'
+  refreshAnnotations()
   scene?.setAnnotations(shownAnnotations())
   updateAnnotButton()
 }
