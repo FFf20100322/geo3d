@@ -69,6 +69,13 @@ function setEditMode(on: boolean): void {
   syncSceneChrome()
 }
 
+/** 换了图形之后挑一个默认模式：有动点的直接进调节模式，没动点的只看 */
+function pickDefaultMode(): void {
+  editMode = movingPoints().length > 0
+  dynOpen = false
+  dynRowsDirty = true
+}
+
 /** 3D 页上所有控件的显隐总调度。改这一页的版式只需要动这里。 */
 function syncSceneChrome(): void {
   const moving = (currentScene?.points ?? []).filter(isMoving)
@@ -679,6 +686,7 @@ $('btn-demo').onclick = () => {
     currentSolvedAll = { ...reSolved.points }
     stepIndex = -1
     scene?.setScene(toRenderable(merged, reSolved.points, parsed))
+    pickDefaultMode()
     renderSolution(sol)
     $<HTMLButtonElement>('btn-generate').textContent = '重新生成'
     say('已载入内置示例。', 'ok')
@@ -779,7 +787,7 @@ function openRecord(r: HistoryRecord) {
         const finalPoints = mergedSolved.ok ? mergedSolved.points : solved.points
         currentSolvedAll = { ...finalPoints }
         scene.setScene(toRenderable(merged, finalPoints, r.scene))
-        dynRowsDirty = true
+        pickDefaultMode()
         syncSceneChrome()
         stepIndex = -1
         stopPlay()
@@ -844,7 +852,7 @@ async function ensureScene(problemText: string, extra: string): Promise<Scene | 
       currentScene = parsed
       currentSolvedAll = { ...solved.points }
       scene?.setScene(render)
-      dynRowsDirty = true
+      pickDefaultMode()
       syncSceneChrome()
       $<HTMLButtonElement>('btn-generate').textContent = '重新生成'
       autoSave(parsed) // 同一条存档从「只有文字」变成「有 3D」

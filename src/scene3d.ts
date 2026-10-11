@@ -268,11 +268,20 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
     renderer.domElement.style.marginTop = `${topInset}px`
     labelHost.style.top = `${topInset}px`
     const canvas = renderer.domElement
-    // 我看不到画面，所以让页面自己把尺寸不一致这件事说出来
-    hint.textContent =
-      canvas.clientWidth === w && canvas.clientHeight === h
-        ? '按住橙色点可直接拖动 · 单指旋转 · 双指缩放'
-        : `⚠ 画布 ${canvas.clientWidth}×${canvas.clientHeight} 与预期 ${w}×${h} 不一致`
+    // 我看不到画面，所以让页面自己把「尺寸对不上」这类事说出来
+    const problems: string[] = []
+    if (canvas.clientWidth !== w || canvas.clientHeight !== h) {
+      problems.push(`画布 ${canvas.clientWidth}×${canvas.clientHeight} 与预期 ${w}×${h} 不一致`)
+    }
+    // 标注层与画布必须严丝合缝，差一点字母就会整体偏移（这是项目最早的那个 bug）
+    const cr = canvas.getBoundingClientRect()
+    const lr = labelHost.getBoundingClientRect()
+    if (Math.abs(cr.top - lr.top) > 1 || Math.abs(cr.height - lr.height) > 1 || Math.abs(cr.width - lr.width) > 1) {
+      problems.push(`标注层(${Math.round(lr.top)},${Math.round(lr.height)}) 与画布(${Math.round(cr.top)},${Math.round(cr.height)}) 没对齐`)
+    }
+    hint.textContent = problems.length
+      ? `⚠ ${problems.join('；')}`
+      : '按住橙色点可直接拖动 · 单指旋转 · 双指缩放'
   }
   window.addEventListener('resize', syncViewport)
 
@@ -289,11 +298,15 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
 
   const screenOf = (at: Vec3) => {
     const v = new THREE.Vector3(at[0], at[1], at[2]).project(camera)
-    return { x: ((v.x + 1) / 2) * window.innerWidth, y: ((1 - v.y) / 2) * window.innerHeight }
+    // 必须按画布自己的矩形换算，不能用窗口 —— 渲染区被上下控件挤小并下移之后，
+    // 拿窗口尺寸去换算会整体偏掉，表现就是「手指按在点上却抓不住」。
+    const r = renderer.domElement.getBoundingClientRect()
+    return { x: r.left + ((v.x + 1) / 2) * r.width, y: r.top + ((1 - v.y) / 2) * r.height }
   }
 
   const rayAt = (x: number, y: number): Ray => {
-    ndc.set((x / window.innerWidth) * 2 - 1, -(y / window.innerHeight) * 2 + 1)
+    const r = renderer.domElement.getBoundingClientRect()
+    ndc.set(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1)
     raycaster.setFromCamera(ndc, camera)
     const o = raycaster.ray.origin
     const d = raycaster.ray.direction
