@@ -13,7 +13,14 @@ import {
   type ProblemCandidate,
 } from './deepseek'
 import { closestParamOnSegment, faceParams, rayPlaneHit, type Ray } from './drag'
-import { arcShape, buildAnnotation, suggestRadius, type AnnotationShape } from './annotation'
+import {
+  arcShape,
+  buildAnnotation,
+  enumerateAngles,
+  suggestRadius,
+  type AngleSpec,
+  type AnnotationShape,
+} from './annotation'
 import { createHistory, type HistoryRecord } from './history'
 import { DEMO_PROBLEM, DEMO_SCENE, DEMO_SOLUTION } from './demo'
 import { checkFacesPlanar, edgeKey, faceKey, parseScene, toRenderable, type Scene } from './scene'
@@ -106,17 +113,43 @@ function syncSceneChrome(): void {
 // ---- 角度标注 ----
 /**
  * 标注分三档，用一个按钮循环。
- * 依据是你先前定的「线面角与二面角默认不画」——这两类要多补射影线和平面角，
- * 一上来就全画出来会把图挤乱，所以默认只画最常见的线线角。
+ * 第一档是本题关键角（模型指出的）；第二档是本地把图上所有角枚举出来的结果。
+ * 默认只画第一档：一张正方体的图上有几十个直角，全画出来会糊成一片。
+ * 但「全部」这一档随时可开，所以不会有该标而没标的角。
  */
-const ANNOT_LABELS = ['标注', '标注：常见', '标注：全部']
+const ANNOT_LABELS = ['标注', '标注：重要', '标注：全部']
 let annotMode: 0 | 1 | 2 = 0
-let currentAnnotations: { shape: AnnotationShape; kind: string }[] = []
+
+/** 当前图上画出来的棱与面，用来本地枚举角度 */
+let currentEdges: [string, string][] = []
+let currentFaces: string[][] = []
+
+interface AnnotEntry {
+  shape: AnnotationShape
+  kind: string
+  /** 1 = 本题关键角；2 = 本地枚举出来的其余角 */
+  tier: 1 | 2
+}
+let currentAnnotations: AnnotEntry[] = []
 
 /** 按当前档位决定画哪些 */
 function shownAnnotations(): AnnotationShape[] {
   if (annotMode === 0) return []
-  return currentAnnotations.filter((a) => annotMode === 2 || a.kind === 'lineLine').map((a) => a.shape)
+  return currentAnnotations.filter((a) => annotMode === 2 || a.tier === 1).map((a) => a.shape)
+}
+
+/** 两条角度看描述是不是同一个，用来去重（模型指的角本地也会枚举出来一遍） */
+function angleKey(spec: AngleSpec): string {
+  const s = (list: string[]) => [...list].sort().join('|')
+  if (spec.kind === 'lineLine') return `ll:${s(spec.p)}:${s(spec.q)}`
+  if (spec.kind === 'linePlane') return `lp:${s(spec.line)}:${s(spec.plane)}`
+  return `dh:${s(spec.edge)}:${spec.inA}:${spec.inB}`
+}
+
+/** 记下当前图上画出来的棱与面。角度枚举要用它，所以每次换图都要同步。 */
+function rememberFigure(s: { edges: [string, string][]; faces: string[][] }): void {
+  currentEdges = s.edges
+  currentFaces = s.faces
 }
 
 /** 按当前坐标重算所有角度标注。动点一动角度会变，所以要跟着重算。 */
@@ -126,17 +159,33 @@ function refreshAnnotations(): void {
   const pts = currentSolvedAll
   currentAnnotations = []
   const doubts: string[] = []
-  if (base && sol && pts && sol.angles.length) {
+
+  if (base && pts) {
     const radius = suggestRadius(Object.values(pts))
     const at = (n: string) => pts[n]
-    for (const spec of sol.angles) {
+    const used = new Set<string>()
+
+    // 第一档：模型指出的本题关键角
+    for (const spec of sol?.angles ?? []) {
       const a = buildAnnotation(spec, at, radius)
       if (!a) continue
+      used.add(angleKey(spec))
       // 模型报的值没通过反验：图上用的是本地算的数，但要让用户知道有这么回事
       if (a.verified === false) doubts.push(`${spec.label ?? '某个角'}：${a.mismatch ?? '对不上'}`)
-      currentAnnotations.push({ shape: arcShape(a, radius), kind: spec.kind })
+      currentAnnotations.push({ shape: arcShape(a, radius), kind: spec.kind, tier: 1 })
+    }
+
+    // 第二档：本地枚举出来的其余角
+    for (const spec of enumerateAngles(currentEdges, currentFaces)) {
+      const key = angleKey(spec)
+      if (used.has(key)) continue
+      used.add(key)
+      const a = buildAnnotation(spec, at, radius)
+      if (!a) continue
+      currentAnnotations.push({ shape: arcShape(a, radius), kind: spec.kind, tier: 2 })
     }
   }
+
   scene?.setAnnotations(shownAnnotations())
   annotDoubts = doubts
   updateAnnotButton()
@@ -147,10 +196,14 @@ let annotDoubts: string[] = []
 
 function updateAnnotButton(): void {
   const btn = $('annot-toggle')
+  const total = annotMode === 2 ? currentAnnotations.length : currentAnnotations.filter((a) => a.tier === 1).length
   btn.style.display = onSceneView && currentAnnotations.length ? 'block' : 'none'
   const base = ANNOT_LABELS[annotMode] ?? '标注'
-  btn.textContent = annotMode > 0 && annotDoubts.length ? `${base} · ${annotDoubts.length}项存疑` : base
-  btn.title = annotDoubts.length ? annotDoubts.join('\n') : '点一下切换：关 / 只常见角 / 全部角'
+  btn.textContent = annotMode > 0 ? `${base}(${total})` : base
+  if (annotMode > 0 && annotDoubts.length) btn.textContent += ` · ${annotDoubts.length}项存疑`
+  btn.title = annotDoubts.length
+    ? annotDoubts.join('\n')
+    : '点一下切换：关 / 只画本题关键角 / 把图上所有角都画出来'
 }
 
 /** 当前渲染场景里所有点的坐标，拖动动点时以它为基准重算 */
@@ -772,7 +825,8 @@ $('btn-demo').onclick = () => {
     currentSolution = sol
     currentSolvedAll = { ...reSolved.points }
     stepIndex = -1
-    scene?.setScene(toRenderable(merged, reSolved.points, parsed))
+    rememberFigure(merged)
+        scene?.setScene(toRenderable(merged, reSolved.points, parsed))
     pickDefaultMode()
     refreshAnnotations()
     renderSolution(sol)
@@ -874,7 +928,8 @@ function openRecord(r: HistoryRecord) {
         const mergedSolved = solve(merged.points, merged.constraints)
         const finalPoints = mergedSolved.ok ? mergedSolved.points : solved.points
         currentSolvedAll = { ...finalPoints }
-        scene.setScene(toRenderable(merged, finalPoints, r.scene))
+        rememberFigure(merged)
+            scene.setScene(toRenderable(merged, finalPoints, r.scene))
         pickDefaultMode()
         currentSolution = r.solution
         refreshAnnotations()
@@ -944,7 +999,8 @@ async function ensureScene(problemText: string, extra: string): Promise<Scene | 
       currentScene = parsed
       currentSolvedAll = { ...solved.points }
       sceneFromText = textKey() // 记住这份图形是按哪版题面建的
-      scene?.setScene(render)
+      rememberFigure(parsed)
+          scene?.setScene(render)
       pickDefaultMode()
       refreshAnnotations()
       syncSceneChrome()
@@ -1170,7 +1226,8 @@ async function generateSolution(btn: HTMLButtonElement): Promise<void> {
         solutionFromText = textKey() // 记住这份解答是按哪版题面推的
         stepIndex = -1 // 换了新题就回到「全部显示」，免得接着上一条的进度
         stopPlay()
-        scene?.setScene(toRenderable(merged, solved.points, base))
+        rememberFigure(merged)
+            scene?.setScene(toRenderable(merged, solved.points, base))
         refreshAnnotations()
         renderSolution(sol)
         autoSave(base, sol)

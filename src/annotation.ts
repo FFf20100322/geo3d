@@ -67,25 +67,47 @@ const DEG = 180 / Math.PI
  */
 export function formatAngle(spec: AngleSpec, degrees: number): { text: string; verified?: boolean; mismatch?: string } {
   const label = spec.label?.trim() ?? ''
-  const degText = `${degrees.toFixed(2)}°`
+  // 直角只画小方块、不写度数 —— 这是课本的规矩，也是让图不糊成一团的关键：
+  // 正方体上有二十几个直角，每个都挂一行「90°」的话什么都看不见了。
+  if (isRightAngle(degrees)) {
+    const bad = checkValue(spec, degrees)
+    return bad.verified === false ? { text: '', ...bad } : { text: '' }
+  }
+  // 整度数不写小数点：60° 比 60.00° 干净得多
+  const degText = Math.abs(degrees - Math.round(degrees)) < 0.005 ? `${Math.round(degrees)}°` : `${degrees.toFixed(2)}°`
   const fallback = label ? `${label} = ${degText}` : degText
   if (!spec.value) return { text: fallback }
+  const checked = checkValue(spec, degrees)
+  if (checked.verified) return { text: label ? `${label} = ${spec.value}` : (spec.value ?? ''), verified: true }
 
+  // 一位小数的度数写法（35.3 与 35.26）算通过，单独放行
+  if ((spec.of ?? 'degrees') === 'degrees' && checked.verified === false) {
+    let ok = false
+    try {
+      ok = Math.abs(parseExpr(spec.value!) - degrees) <= 0.06
+    } catch {
+      ok = false
+    }
+    if (ok) return { text: label ? `${label} = ${spec.value}` : (spec.value ?? ''), verified: true }
+  }
+  return { text: fallback, verified: false, mismatch: checked.mismatch }
+}
+
+/** 只做「模型报的值对不对」这一件事 */
+function checkValue(spec: AngleSpec, degrees: number): { verified?: boolean; mismatch?: string } {
+  if (!spec.value) return {}
   const of: AngleUnit = spec.of ?? 'degrees'
   const want =
     of === 'cos' ? Math.cos((degrees * Math.PI) / 180) : of === 'sin' ? Math.sin((degrees * Math.PI) / 180) : degrees
-  // 度数容许一位小数的写法（35.26 与 35.2644 算一致）；余弦正弦按绝对误差比
   const tol = of === 'degrees' ? 0.06 : 5e-4
-
   let got: number
   try {
     got = parseExpr(spec.value)
   } catch (e) {
-    return { text: fallback, verified: false, mismatch: `看不出「${spec.value}」是什么：${e instanceof Error ? e.message : e}` }
+    return { verified: false, mismatch: `看不出「${spec.value}」是什么：${e instanceof Error ? e.message : e}` }
   }
-  if (Math.abs(got - want) <= tol) return { text: label ? `${label} = ${spec.value}` : spec.value, verified: true }
+  if (Math.abs(got - want) <= tol) return { verified: true }
   return {
-    text: fallback,
     verified: false,
     mismatch: `模型写 ${spec.value}，本地按${of === 'cos' ? '余弦' : of === 'sin' ? '正弦' : '度数'}算是 ${want.toFixed(4)}`,
   }
@@ -252,11 +274,108 @@ export interface AnnotationShape {
   text: string
 }
 
-/** 把算好的角变成可以直接画的一串几何量 */
+/** 直角判定容差：算出来的度数跟 90 差这么点以内，就当成直角 */
+const RIGHT_ANGLE_TOL = 0.5
+
+/** 这个角是不是直角 —— 直角不画弧，画一个小方块（课本上的规矩） */
+export function isRightAngle(degrees: number): boolean {
+  return Math.abs(degrees - 90) <= RIGHT_ANGLE_TOL
+}
+
+/**
+ * 把算好的角变成可以直接画的一串几何量。
+ *
+ * 直角特殊处理：画成「从顶点出发沿一个方向走、拐一下、再沿另一个方向回来」的三点折线，
+ * 也就是课本上那个小方块。它比四分之一圆弧省地方，在一堆直角里也不会糊成一片。
+ */
 export function arcShape(a: Annotation, radius: number): AnnotationShape {
   const from = add(a.vertex, mul(a.dirFrom, radius))
   const to = add(a.vertex, mul(a.dirTo, radius))
+  if (isRightAngle(a.degrees)) {
+    return {
+      arc: [from, add(from, mul(a.dirTo, radius)), to],
+      extras: a.extraEdges,
+      labelAt: a.labelAt,
+      text: a.text,
+    }
+  }
   return { arc: arcPoints(a.vertex, from, to, radius), extras: a.extraEdges, labelAt: a.labelAt, text: a.text }
+}
+
+/**
+ * 本地枚举「图上值得标注的角」。
+ *
+ * 为什么要本地枚举而不是全让模型列：模型列角既要多花时间，又会漏。
+ * 图上的点、棱、面本地都有，枚举出来是瞬间的事，而且一个都不会漏。
+ * 模型仍然可以指出「哪几个角是本题关键」，那作为第一档；这里枚举出来的算第二档。
+ *
+ * 枚举范围刻意收窄到「图上有意义的那几类」，否则组合会爆炸：
+ * - 线线角：共用一个顶点的两条线段（同向的不算，那是 0°）
+ * - 二面角：共一条棱的两个面
+ * - 线面角：一条线段与一个平面，要求线段不在平面内、且恰有一个公共顶点
+ */
+export function enumerateAngles(edges: [string, string][], faces: string[][]): AngleSpec[] {
+  const out: AngleSpec[] = []
+
+  // 共顶点的线段两两成角
+  const byVertex = new Map<string, Set<string>>()
+  for (const [a, b] of edges) {
+    if (!byVertex.has(a)) byVertex.set(a, new Set())
+    if (!byVertex.has(b)) byVertex.set(b, new Set())
+    byVertex.get(a)?.add(b)
+    byVertex.get(b)?.add(a)
+  }
+  const seenLine = new Set<string>()
+  for (const [v, others] of byVertex) {
+    const list = [...others].sort()
+    for (let i = 0; i < list.length; i++) {
+      for (let j = i + 1; j < list.length; j++) {
+        const key = [v, list[i], list[j]].sort().join('|')
+        if (seenLine.has(key)) continue
+        seenLine.add(key)
+        out.push({ kind: 'lineLine', p: [v, list[i]], q: [v, list[j]] })
+      }
+    }
+  }
+
+  // 共棱的两个面组成二面角
+  const faceOfEdge = new Map<string, string[][]>()
+  for (const face of faces) {
+    for (let i = 0; i < face.length; i++) {
+      const a = face[i]
+      const b = face[(i + 1) % face.length]
+      const key = [a, b].sort().join('|')
+      if (!faceOfEdge.has(key)) faceOfEdge.set(key, [])
+      faceOfEdge.get(key)?.push(face)
+    }
+  }
+  for (const [key, pair] of faceOfEdge) {
+    if (pair.length !== 2) continue // 只共一条棱、正好两个面
+    const [a, b] = key.split('|')
+    const [f1, f2] = pair
+    const inA = f1.find((p) => p !== a && p !== b)
+    const inB = f2.find((p) => p !== a && p !== b)
+    if (inA && inB) out.push({ kind: 'dihedral', edge: [a, b], inA, inB })
+  }
+
+  // 线段与平面：不在面内、且恰有一个公共顶点
+  for (const [a, b] of edges) {
+    for (const face of faces) {
+      const set = new Set(face)
+      const na = set.has(a)
+      const nb = set.has(b)
+      if (na && nb) continue // 线段落在面内 → 0°，没意义
+      if (!na && !nb) continue // 与这个面不相接，多半是 0° 或需要求交点，先不枚举
+      // 有一个端点在面上：这才是课本上会去求的斜线面角
+      const vertex = na ? a : b
+      const other = na ? b : a
+      const others = face.filter((p) => p !== vertex)
+      if (others.length < 2) continue
+      out.push({ kind: 'linePlane', line: [vertex, other], plane: [others[0], others[1], others[2] ?? others[0]] })
+    }
+  }
+
+  return out
 }
 
 /** 从场景与坐标里算出半径该取多大 —— 太小看不见，太大压到别的元素 */

@@ -307,7 +307,10 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
         setLinePoints(e, pair)
         e.computeLineDistances()
       })
-      s.label.element.textContent = a.text
+      // 没有文字就不占位置（直角只画符号，不写度数）
+      const el = s.label.element as HTMLElement
+      el.textContent = a.text
+      el.style.display = a.text ? 'block' : 'none'
       s.label.position.copy(v3(a.labelAt))
     })
   }

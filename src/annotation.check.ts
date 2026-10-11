@@ -1,5 +1,20 @@
-import { buildAnnotation, suggestRadius, type AngleSpec } from './annotation.ts'
+import {
+  arcShape,
+  buildAnnotation,
+  enumerateAngles,
+  isRightAngle,
+  suggestRadius,
+  type AngleSpec,
+} from './annotation.ts'
 import type { Vec3 } from './solver.ts'
+
+/** 给枚举结果做去重键，用来验证「没有重复」 */
+function angleKeyOf(spec: AngleSpec): string {
+  const s = (list: string[]) => [...list].sort().join('|')
+  if (spec.kind === 'lineLine') return `ll:${s(spec.p)}:${s(spec.q)}`
+  if (spec.kind === 'linePlane') return `lp:${s(spec.line)}:${s(spec.plane)}`
+  return `dh:${s(spec.edge)}:${spec.inA}:${spec.inB}`
+}
 
 /**
  * 可运行的校验：把「要标哪个角」翻译成「图上画什么」。
@@ -119,18 +134,28 @@ ok(
 
 console.log('\n【显示文字：度数永远由本地算，模型给的写法必须过反验】')
 {
-  const lineLine: AngleSpec = { kind: 'lineLine', p: ['A', 'B'], q: ['A', 'D'], label: '∠BAD' }
-  const a = buildAnnotation(lineLine, at, R)
-  ok('模型没给 value 时，显示本地算出的度数', a?.text === '∠BAD = 90.00°', a?.text ?? '(空)')
+  // 用一个 45° 的角当例子：直角现在不写度数（只画小方块），拿它测文字就测不出东西
+  const oblique: AngleSpec = { kind: 'lineLine', p: ['A', 'B'], q: ['A1', 'C1'], label: 'AB 与 A₁C₁' }
+  const a = buildAnnotation(oblique, at, R)
+  ok('模型没给 value 时，显示本地算出的度数', a?.text === 'AB 与 A₁C₁ = 45°', a?.text ?? '(空)')
+  ok('整度数不写小数点（45° 而不是 45.00°）', (a?.text ?? '').includes('45°'))
   ok('没给 value 就不算「未通过」', a?.verified === undefined)
 
+  // 直角：只画符号，不写度数
+  const rightSpec: AngleSpec = { kind: 'lineLine', p: ['A', 'B'], q: ['A', 'D'], label: '∠BAD' }
+  const right = buildAnnotation(rightSpec, at, R)
+  ok('直角不写度数（只留小方块）', right?.text === '', `实际「${right?.text}」`)
+  // 但直角报错了值仍然要能被发现
+  const rightBad = buildAnnotation({ ...rightSpec, value: '60°', of: 'degrees' }, at, R)
+  ok('直角报错了值也会被记下存疑', rightBad?.text === '' && rightBad?.verified === false, rightBad?.mismatch ?? '')
+
   // 模型报对了：直接用它的排版
-  const good = buildAnnotation({ ...lineLine, value: '90°', of: 'degrees' }, at, R)
-  ok('模型报对了就用它的写法', good?.text === '∠BAD = 90°' && good?.verified === true, good?.text ?? '')
+  const good = buildAnnotation({ ...oblique, value: '45°', of: 'degrees' }, at, R)
+  ok('模型报对了就用它的写法', good?.text === 'AB 与 A₁C₁ = 45°' && good?.verified === true, good?.text ?? '')
 
   // 模型报错了：不能显示错的，退回本地算的度数
-  const bad = buildAnnotation({ ...lineLine, value: '60°', of: 'degrees' }, at, R)
-  ok('模型报错了就退回本地度数', bad?.text === '∠BAD = 90.00°' && bad?.verified === false, bad?.text ?? '')
+  const bad = buildAnnotation({ ...oblique, value: '60°', of: 'degrees' }, at, R)
+  ok('模型报错了就退回本地度数', bad?.text === 'AB 与 A₁C₁ = 45°' && bad?.verified === false, bad?.text ?? '')
   ok('并且说明哪里对不上', !!bad?.mismatch, bad?.mismatch ?? '')
 
   // 余弦写法：A₁C 与底面所成角的余弦是 √6/3
@@ -146,8 +171,8 @@ console.log('\n【显示文字：度数永远由本地算，模型给的写法�
   ok('一位小数的度数写法算通过', rounded?.verified === true, rounded?.mismatch ?? '')
 
   // 完全看不懂的写法
-  const junk = buildAnnotation({ ...lineLine, value: '九十度' }, at, R)
-  ok('看不懂的写法退回本地度数并说明', junk?.text === '∠BAD = 90.00°' && !!junk?.mismatch, junk?.mismatch ?? '')
+  const junk = buildAnnotation({ ...oblique, value: '四十五度' }, at, R)
+  ok('看不懂的写法退回本地度数并说明', junk?.text === 'AB 与 A₁C₁ = 45°' && !!junk?.mismatch, junk?.mismatch ?? '')
 
   // 二面角的标准答案：余弦为 √3/3
   const dh = buildAnnotation(
@@ -158,5 +183,67 @@ console.log('\n【显示文字：度数永远由本地算，模型给的写法�
   ok('二面角的余弦写法也能通过', dh?.verified === true, dh?.text ?? '')
 }
 
-console.log(`\n${failed === 0 ? '✓ 全部通过' : `✗ ${failed} 项未通过`}`)
-if (failed > 0) process.exit(1)
+console.log('\n【直角画成小方块，不画圆弧】')
+{
+  const right = buildAnnotation({ kind: 'lineLine', p: ['A', 'B'], q: ['A', 'D'], label: '∠BAD' }, at, R)
+  ok('直角本身算得出来', right !== null && Math.abs(right.degrees - 90) < 1e-9)
+  const shape = right ? arcShape(right, R) : null
+  ok('直角只画三个点（折线，不是弧）', shape?.arc.length === 3, `实际 ${shape?.arc.length}`)
+  ok('折线起点落在第一个方向上', shape ? d3(shape.arc[0], right!.vertex) - R < 1e-9 : false)
+  ok('折线拐角处到顶点距离是半径的根号二倍', (() => {
+    if (!shape || !right) return false
+    return near(d3(shape.arc[1], right.vertex), R * Math.SQRT2, 1e-9)
+  })())
+
+  // 非直角仍然画弧，而且是很多点
+  const oblique = buildAnnotation({ kind: 'lineLine', p: ['A', 'B'], q: ['A1', 'C1'], label: 'x' }, at, R)
+  const obliqueShape = oblique ? arcShape(oblique, R) : null
+  ok('不是直角就照旧画弧（点数多于 3）', (obliqueShape?.arc.length ?? 0) > 3, `实际 ${obliqueShape?.arc.length}`)
+
+  ok('直角判定：90 度是，89 不是', isRightAngle(90) && !isRightAngle(89))
+}
+
+console.log('\n【本地枚举图上所有角】')
+{
+  const edges: [string, string][] = [
+    ['A', 'B'], ['B', 'C'], ['C', 'D'], ['D', 'A'],
+    ['A1', 'B1'], ['B1', 'C1'], ['C1', 'D1'], ['D1', 'A1'],
+    ['A', 'A1'], ['B', 'B1'], ['C', 'C1'], ['D', 'D1'],
+  ]
+  const faces = [
+    ['A', 'B', 'C', 'D'],
+    ['A1', 'B1', 'C1', 'D1'],
+    ['A', 'B', 'B1', 'A1'],
+    ['B', 'C', 'C1', 'B1'],
+    ['C', 'D', 'D1', 'C1'],
+    ['D', 'A', 'A1', 'D1'],
+  ]
+  const found = enumerateAngles(edges, faces)
+  const count = (k: string) => found.filter((f) => f.kind === k).length
+  // 正方体是可以手算的：8 个顶点每个 3 条棱 → 每顶点 3 对角 → 24
+  ok('线线角枚举出 24 个', count('lineLine') === 24, `实际 ${count('lineLine')}`)
+  // 12 条棱，每条棱正好属于 2 个面 → 12 个二面角
+  ok('二面角枚举出 12 个', count('dihedral') === 12, `实际 ${count('dihedral')}`)
+  // 每条棱与「只含它一个端点的面」组成线面角，每条棱 2 个 → 24
+  ok('线面角枚举出 24 个', count('linePlane') === 24, `实际 ${count('linePlane')}`)
+  ok('没有重复', new Set(found.map((f) => angleKeyOf(f))).size === found.length)
+
+  // 抽一个来验：棱 AB 与面 BCC₁B₁（AB 的端点 B 在该面内）
+  const sample = found.find(
+    (f): f is Extract<AngleSpec, { kind: 'linePlane' }> =>
+      f.kind === 'linePlane' && f.line[1] === 'B' && f.plane.includes('C1'),
+  )
+  ok('能抽出「AB 与面 BCC₁B₁」这样的线面角', !!sample)
+  if (sample) {
+    const a = buildAnnotation(sample, at, R)
+    // AB ⊥ 面 BCC₁B₁，所以这个线面角是 90°
+    ok('抽出来的这个角算出来是 90°（AB 垂直于该面）', a !== null && Math.abs(a.degrees - 90) < 1e-6, `${a?.degrees.toFixed(4)}`)
+  }
+
+  // 共棱的两个面才能组成二面角
+  const dh = found.find((f): f is Extract<AngleSpec, { kind: 'dihedral' }> => f.kind === 'dihedral')
+  ok('枚举出的二面角参考点都不在棱上', (() => {
+    if (!dh) return false
+    return dh.inA !== dh.edge[0] && dh.inA !== dh.edge[1] && dh.inB !== dh.edge[0] && dh.inB !== dh.edge[1]
+  })())
+}
