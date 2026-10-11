@@ -1,10 +1,12 @@
 import {
   ApiError,
   buildScene,
+  CancelledError,
   fetchBalance,
   getKey,
   listProblems,
   readProblem,
+  setAbortSignal,
   setKey,
   solveProblem,
   type OcrResult,
@@ -924,12 +926,35 @@ async function ensureScene(problemText: string, extra: string): Promise<Scene | 
       autoSave(parsed) // 同一条存档从「只有文字」变成「有 3D」
       return parsed
     } catch (e) {
-      if (e instanceof ApiError) throw e // 网络、额度之类的错，升档重试没意义
+      if (e instanceof ApiError || e instanceof CancelledError) throw e // 网络、额度之类的错，升档重试没意义
       lastProblem = message(e)
       console.warn(`[geo3d] 推理档 ${effort} 失败：${lastProblem}`)
     }
   }
   throw new Error(lastProblem)
+}
+
+/** 后台任务进度条 + 取消 */
+let abortCtrl: AbortController | null = null
+/** 嵌套计数：开始解题会先建图再解题，两段共用一个可取消的任务 */
+let taskDepth = 0
+
+function beginTask(): void {
+  if (taskDepth++ > 0) return
+  abortCtrl = new AbortController()
+  setAbortSignal(abortCtrl.signal)
+}
+
+function endTask(): void {
+  if (--taskDepth > 0) return
+  taskDepth = 0
+  abortCtrl = null
+  setAbortSignal(undefined)
+  setProgress(null)
+}
+
+$('progress-cancel').onclick = () => {
+  abortCtrl?.abort()
 }
 
 /**
@@ -949,7 +974,7 @@ function setProgress(pct: number | null, label = ''): void {
   $('progress-text').textContent = label
 }
 
-async function runBuild(btn: HTMLButtonElement, then?: () => void): Promise<void> {
+async function runBuild(btn: HTMLButtonElement, then?: () => void | Promise<void>): Promise<void> {
   const problemText = $<HTMLTextAreaElement>('problem-text').value.trim()
   const extra = $<HTMLTextAreaElement>('extra').value
   if (!problemText) {
@@ -961,6 +986,7 @@ async function runBuild(btn: HTMLButtonElement, then?: () => void): Promise<void
     return
   }
   btn.disabled = true
+  beginTask()
   setProgress(4, '准备开始…')
   try {
     await ensureScene(problemText, extra)
@@ -968,14 +994,18 @@ async function runBuild(btn: HTMLButtonElement, then?: () => void): Promise<void
     // 图形一建好就进 3D：不管走哪条路，先把图给你看。
     // 要推解题的场合，解题在后台继续跑，推完再进解题过程页。
     show('3d')
-    if (then) then()
+    if (then) await then()
     else setTimeout(() => setProgress(null), 400)
   } catch (e) {
-    setProgress(null)
+    if (e instanceof CancelledError) {
+      say('已取消。')
+      return
+    }
     say(`没能建出图形。卡在：${message(e)}`, 'err')
     show('text')
   } finally {
     btn.disabled = false
+    endTask()
   }
 }
 
@@ -1123,7 +1153,7 @@ async function generateSolution(btn: HTMLButtonElement): Promise<void> {
         show('solution')
         return
       } catch (e) {
-        if (e instanceof ApiError) throw e
+        if (e instanceof ApiError || e instanceof CancelledError) throw e
         lastProblem = message(e)
         console.warn(`[geo3d] 解题过程 推理档 ${effort} 失败：${lastProblem}`)
       }
@@ -1131,6 +1161,14 @@ async function generateSolution(btn: HTMLButtonElement): Promise<void> {
     setProgress(null)
     say(`三档推理都试过了，解题过程还是没出来。最后一次卡在：${lastProblem}`, 'err')
     show('text')
+  } catch (e) {
+    if (e instanceof CancelledError) {
+      // 图形已经建好了，取消的只是解题那一半，所以退回去看图而不是退回文字页
+      say('已取消，图形已经建好了。')
+      show('3d')
+      return
+    }
+    throw e
   } finally {
     btn.disabled = false
   }

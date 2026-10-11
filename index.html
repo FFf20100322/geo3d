@@ -88,7 +88,9 @@
       #progress { position: fixed; top: 56px; left: 12px; right: 12px; z-index: 30; display: none; padding: 8px 12px; border-radius: 10px; background: rgba(20,26,34,.94); border: 1px solid #2b3442; }
       #progress-track { height: 6px; border-radius: 3px; background: #222833; overflow: hidden; }
       #progress-fill { height: 100%; width: 0; border-radius: 3px; background: linear-gradient(90deg,#3b82f6,#60a5fa); transition: width .25s ease; }
-      #progress-text { margin-top: 6px; font-size: 12px; color: #98a2b3; }
+      #progress-text { flex: 1 1 auto; margin: 0; font-size: 12px; color: #98a2b3; }
+      #progress-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+      #progress-cancel { flex: none; padding: 3px 10px; font-size: 12px; }
       #dyn-panel .dyn-row + .dyn-row { margin-top: 12px; padding-top: 10px; border-top: 1px solid #222833; }
       #dyn-panel .dyn-top { display: flex; align-items: center; gap: 8px; }
       #dyn-panel label { flex: 1 1 auto; margin: 0; font-size: 13px; color: #cbd5e1; }
@@ -220,8 +222,11 @@
     </section>
 
     <div id="progress">
+      <div id="progress-head">
+        <div id="progress-text"></div>
+        <button id="progress-cancel" class="ghost">取消</button>
+      </div>
       <div id="progress-track"><div id="progress-fill"></div></div>
-      <div id="progress-text"></div>
     </div>
     <div id="scene-tools">
       <button id="dyn-toggle" class="ghost">精确调节</button>

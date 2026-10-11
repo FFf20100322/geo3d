@@ -35,6 +35,24 @@ function explain(status: number, body: string): string {
   return `接口返回 ${status}：${body.slice(0, 200)}`
 }
 
+/** 用户主动取消。单独一个类型，因为取消不该被当成失败去重试。 */
+export class CancelledError extends Error {
+  constructor() {
+    super('已取消')
+    this.name = 'CancelledError'
+  }
+}
+
+/**
+ * 当前任务的取消信号。
+ * 同一时刻只会有一条任务链在跑（单用户、单界面），所以用一个模块级变量最省事，
+ * 不必把 signal 一层层加进每个函数的参数里。
+ */
+let currentSignal: AbortSignal | undefined
+export function setAbortSignal(s: AbortSignal | undefined): void {
+  currentSignal = s
+}
+
 async function request(path: string, body?: unknown): Promise<unknown> {
   const key = getKey()
   if (!key) throw new ApiError('还没有填 API Key，先去设置里填上。')
@@ -48,8 +66,12 @@ async function request(path: string, body?: unknown): Promise<unknown> {
         ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
       },
       body: body === undefined ? undefined : JSON.stringify(body),
+      signal: currentSignal,
     })
-  } catch {
+  } catch (e) {
+    // 取消要如实区分出来：当成网络错误会让用户以为是自己网的问题，而且会被重试循环白跑两轮
+    if (e instanceof DOMException && e.name === 'AbortError') throw new CancelledError()
+    if (e instanceof Error && e.name === 'AbortError') throw new CancelledError()
     // fetch 抛异常通常意味着网络断了或被浏览器拦下（跨域已实测放行，所以多半是网络）
     throw new ApiError('网络没通，检查一下手机的网络再试。')
   }
