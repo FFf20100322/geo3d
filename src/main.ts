@@ -912,6 +912,7 @@ async function ensureScene(problemText: string, extra: string): Promise<Scene | 
 
       currentScene = parsed
       currentSolvedAll = { ...solved.points }
+      sceneFromText = textKey() // 记住这份图形是按哪版题面建的
       scene?.setScene(render)
       pickDefaultMode()
       refreshAnnotations()
@@ -953,13 +954,13 @@ async function runBuild(btn: HTMLButtonElement, then?: () => void): Promise<void
 }
 
 /**
- * 文字页上只剩一个按钮：建图形、推解题，然后直接进解题过程页。
+ * 文字页上的主按钮：建图形、推解题，然后直接进解题过程页。
  * 图形是在这一步顺带建好的，所以解题过程页底部那个「看带辅助线的图形」是立刻能点的，不用再等。
  */
 $('btn-generate').onclick = async () => {
   const btn = $<HTMLButtonElement>('btn-generate')
-  // 已经推过一次就直接拿出来看，不必再花一次接口调用
-  if (currentSolution) {
+  // 已经推过一次就直接拿出来看，不必再花一次接口调用 —— 但题面改过就不算「同一次」
+  if (currentSolution && solutionFromText === textKey()) {
     renderSolution(currentSolution)
     show('solution')
     return
@@ -968,6 +969,27 @@ $('btn-generate').onclick = async () => {
     void generateSolution(btn)
   })
 }
+
+/** 旁边那个小按钮：只想先看看图形建得对不对，不花推理的钱、也不用等解答。 */
+$('btn-shape').onclick = async () => {
+  if (currentScene && sceneFromText === textKey()) {
+    show('3d')
+    return
+  }
+  await runBuild($<HTMLButtonElement>('btn-shape'))
+}
+
+/**
+ * 题面与补充条件的指纹。
+ * 用途：判断手上这份图形/解答是不是按当前题面做的。
+ * 不比对的话，改完题面再点按钮会看到上一次的结果，人会以为改动没生效。
+ */
+function textKey(): string {
+  return `${$<HTMLTextAreaElement>('problem-text').value.trim()}\u0000${$<HTMLTextAreaElement>('extra').value.trim()}`
+}
+
+let sceneFromText = ''
+let solutionFromText = ''
 
 // ---- 解题过程 ----
 let currentSolution: Solution | undefined
@@ -1061,6 +1083,7 @@ async function generateSolution(btn: HTMLButtonElement): Promise<void> {
         }
 
         currentSolution = sol
+        solutionFromText = textKey() // 记住这份解答是按哪版题面推的
         stepIndex = -1 // 换了新题就回到「全部显示」，免得接着上一条的进度
         stopPlay()
         scene?.setScene(toRenderable(merged, solved.points, base))
