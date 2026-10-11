@@ -99,12 +99,21 @@ geo / solver / text / scene / history / solution / demo / drag / symbolic / angl
 
 ## 每一轮的收尾动作
 
-1. `pnpm check` 十二项全绿
-2. `git commit`（中文提交信息，写清改了什么、为什么、遇到的坑、修没修好）
-3. `pnpm backup` 备份到 `F:\DSH项目备份\高中立体几何`（完整仓库副本 + 历史快照，保留最近 20 份）
-4. 同步本文件的进度
+1. 同步本文件的进度
+2. `pnpm check` 十二项全绿（不全绿不算完成）
+3. `git commit` 后 `git push`（本地与 GitHub 同时保存）
+4. `pnpm backup` 备份到 `F:\DSH项目备份\高中立体几何`（完整仓库副本 + 历史快照，保留最近 20 份）
+
+**提交信息要写清四件事**（用户明确要求）：改了什么、为什么这么改、遇到了什么问题、哪些已解决。
+不要写「修了一些问题」这种没信息量的话。
 
 **出问题时优先用本地备份退回**：`最新/` 是完整仓库（含 .git），直接打开就能继续；`历史/` 里按时间留着快照。
+
+## 仓库
+
+- GitHub：https://github.com/FFf20100322/solid-geometry-3d （公开，默认分支 main）
+- 提交身份用 GitHub 的免回复邮箱，不暴露真实邮箱
+- 本地：`F:\deep seek-harness\geo3d`（独立 git 仓库）
 
 ## 手机接管：允许与禁止
 
