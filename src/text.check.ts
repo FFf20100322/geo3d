@@ -1,4 +1,4 @@
-import { normalizeMath, normalizeSubscripts } from './text.ts'
+import { latexToPlain, normalizeMath, normalizeSubscripts } from './text.ts'
 
 /**
  * 可运行的校验：下标规范化。
@@ -38,6 +38,36 @@ console.log('\n【数学排版：指数要转成上标】')
   m('S=2×2=4', 'S=2×2=4')
   // 字母指数不转：x^n 里的 n 可能有别的含义，不乱动
   m('a^n + b^n', 'a^n + b^n')
+}
+
+console.log('\n【LaTeX → 能读的普通写法】')
+{
+  const l = (input: string, want: string) => {
+    const got = latexToPlain(input)
+    const ok = got === want
+    if (!ok) failed++
+    console.log(`${ok ? '  ✓' : '  ✗'} ${input}\n      → ${got}${ok ? '' : `\n      期望 ${want}`}`)
+  }
+  // 这一条就是实拍那道题里原样吐回来的东西
+  l(
+    '则$\\frac{1}{|\\overrightarrow{PQ}|}+\\frac{1}{|\\overrightarrow{PR}|}+\\frac{1}{|\\overrightarrow{PS}|}=$____。',
+    '则1/|向量PQ|+1/|向量PR|+1/|向量PS|=____。',
+  )
+  l('\\frac{1}{2}', '1/2')
+  l('\\frac{a+b}{c}', '(a+b)/c')
+  l('\\frac{a}{b+c}', 'a/(b+c)')
+  l('\\frac{\\sqrt{3}}{6}', '√(3)/6')
+  l('\\frac{1}{|PQ|}', '1/|PQ|')
+  l('\\sqrt{2}', '√(2)')
+  l('$\\triangle ABC$ 中，$\\angle A=60^\\circ$', '△ABC 中，∠A=60°')
+  l('PA \\perp 平面ABCD', 'PA ⊥ 平面ABCD')
+  l('AB \\parallel CD', 'AB ∥ CD')
+  l('|GH|^2=\\frac{3}{4}', '|GH|²=3/4')
+  l('\\alpha+\\beta=\\theta', 'α+β=θ')
+  l('\\text{解：}设x=1', '解：设x=1')
+  l('$A_1B_1$', 'A₁B₁')
+  l('\\overrightarrow{AB}\\cdot\\overrightarrow{AC}', '向量AB·向量AC')
+  l('没有任何 LaTeX 的普通句子', '没有任何 LaTeX 的普通句子')
 }
 
 console.log(`\n${failed === 0 ? '✓ 全部通过' : `✗ ${failed} 项未通过`}`)

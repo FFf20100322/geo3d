@@ -5,7 +5,7 @@
  */
 
 // 带 .ts 后缀：这个模块要能被 node 直接导入跑自检
-import { normalizeMath } from './text.ts'
+import { latexToPlain, normalizeMath } from './text.ts'
 
 const BASE = 'https://api.deepseek.com'
 const MODEL = 'deepseek-flash'
@@ -353,6 +353,13 @@ const OCR_SYSTEM = `你是高中数学立体几何题的转写助手。用户会
 另外还要单独列一份点清单：
 - points 里列出这道题出现过的所有几何点名称，每个只出现一次，按题面出现顺序排列。
 - 这份清单是用来给用户核对有没有漏下标的，所以务必写全，包括带下标的点。
+数学式子的写法（很要紧，用户要照着核对，读不懂就等于没识别）：
+- 绝对不要用 LaTeX。不要写 \\frac、\\sqrt、\\overrightarrow、$ 这些，一律用普通字符。
+- 分数写成 a/b，分子分母里有加减或根号时加括号，例如 1/|PQ|、√3/6、(a+b)/c。
+- 绝对值就用竖线，例如 |PQ|。
+- 向量写成「向量PQ」，例如 向量PQ · 向量PR。
+- 根号写 √3 或 √(2+1)；角度写 60°；三角形写 △ABC；角写 ∠A。
+- 上下标用下标字符，例如 A₁、x²。
 其他要求：
 - 题面配的插图可能不准，一律不要拿插图当已知条件，只认文字。
 - 只转写，不要解题，不要补全你没看见的条件，不要改写措辞。
@@ -397,10 +404,13 @@ export async function readProblem(imageDataUrl: string, target?: ProblemCandidat
     }
     try {
       const parsed = JSON.parse(content) as { problemText?: unknown; points?: unknown; uncertain?: unknown }
-      const problemText = typeof parsed.problemText === 'string' ? normalizeMath(parsed.problemText.trim()) : ''
+      // 先过 LaTeX 转换再过排版规范化：书本上的分数、绝对值、向量箭头模型经常原样吐 LaTeX 回来，
+      // 而题面是用户核对的第一道关，读不了就等于没识别。
+      const problemText =
+        typeof parsed.problemText === 'string' ? normalizeMath(latexToPlain(parsed.problemText.trim())) : ''
       if (problemText) {
         const points = Array.isArray(parsed.points)
-          ? parsed.points.map((s) => normalizeMath(String(s).trim()))
+          ? parsed.points.map((s) => normalizeMath(latexToPlain(String(s).trim())))
           : []
         // 点清单也兜一道：万一模型在 points 里漏了下标，从题面里再扫一遍带下标的点补上
         const found = problemText.match(/[A-Za-z][₀-₉]+/g) ?? []

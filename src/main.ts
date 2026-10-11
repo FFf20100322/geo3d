@@ -889,9 +889,10 @@ async function ensureScene(problemText: string, extra: string): Promise<Scene | 
   if (currentScene) return currentScene
 
   let lastProblem = '未知原因'
-  for (const effort of EFFORTS) {
+  for (const [i, effort] of EFFORTS.entries()) {
     try {
       say(`正在把题目变成几何场景（推理档 ${effort}）…`)
+      setProgress(8 + i * 22, `第 ${i + 1} 次尝试建模（推理档 ${effort}）…`)
       const raw = await buildScene(problemText, extra, effort)
 
       if (raw && typeof raw === 'object' && typeof (raw as { unsupported?: unknown }).unsupported === 'string') {
@@ -900,12 +901,14 @@ async function ensureScene(problemText: string, extra: string): Promise<Scene | 
 
       const parsed = parseScene(raw)
       say('正在解算图形…')
+      setProgress(78, '约束已到手，正在解算坐标…')
       const solved = solve(parsed.points, parsed.constraints)
       if (!solved.ok) {
         const worst = [...solved.residuals].sort((a, b) => b.error - a.error).slice(0, 3)
         throw new Error(`解出来的图形不满足这些条件：${worst.map((r) => `${r.desc}（实际 ${r.actual}）`).join('；')}`)
       }
 
+      setProgress(92, '正在逐条回验约束与共面性…')
       const render = toRenderable(parsed, solved.points)
       const notPlanar = checkFacesPlanar(render)
       if (notPlanar.length) throw new Error(`面不对：${notPlanar.join('；')}`)
@@ -929,6 +932,23 @@ async function ensureScene(problemText: string, extra: string): Promise<Scene | 
   throw new Error(lastProblem)
 }
 
+/**
+ * 后台任务进度条。
+ * 建模与解题都是多阶段的长任务（还要在推理档之间重试），没有进度显示就像卡死了。
+ * 进度是「阶段式」的：真正到哪一步只有接口返回才知道，所以这里如实显示当前在做第几次尝试，
+ * 而不是假装有一个精确的百分比。
+ */
+function setProgress(pct: number | null, label = ''): void {
+  const box = $('progress')
+  if (pct === null) {
+    box.style.display = 'none'
+    return
+  }
+  box.style.display = 'block'
+  $('progress-fill').style.width = `${Math.min(100, Math.max(0, pct))}%`
+  $('progress-text').textContent = label
+}
+
 async function runBuild(btn: HTMLButtonElement, then?: () => void): Promise<void> {
   const problemText = $<HTMLTextAreaElement>('problem-text').value.trim()
   const extra = $<HTMLTextAreaElement>('extra').value
@@ -941,11 +961,17 @@ async function runBuild(btn: HTMLButtonElement, then?: () => void): Promise<void
     return
   }
   btn.disabled = true
+  setProgress(4, '准备开始…')
   try {
     await ensureScene(problemText, extra)
+    setProgress(100, '图形已就绪')
+    // 图形一建好就进 3D：不管走哪条路，先把图给你看。
+    // 要推解题的场合，解题在后台继续跑，推完再进解题过程页。
+    show('3d')
     if (then) then()
-    else show('3d')
+    else setTimeout(() => setProgress(null), 400)
   } catch (e) {
+    setProgress(null)
     say(`没能建出图形。卡在：${message(e)}`, 'err')
     show('text')
   } finally {
@@ -1064,9 +1090,10 @@ async function generateSolution(btn: HTMLButtonElement): Promise<void> {
   const points = base.points.map((p) => p.name)
 
   try {
-    for (const effort of EFFORTS) {
+    for (const [i, effort] of EFFORTS.entries()) {
       try {
         say(`正在推理解题过程（推理档 ${effort}）…`)
+        setProgress(30 + i * 25, `第 ${i + 1} 次尝试推理解题（推理档 ${effort}）…`)
         const raw = await solveProblem(problemText, extra, points, effort)
 
         if (raw && typeof raw === 'object' && typeof (raw as { unsupported?: unknown }).unsupported === 'string') {
@@ -1091,6 +1118,8 @@ async function generateSolution(btn: HTMLButtonElement): Promise<void> {
         renderSolution(sol)
         autoSave(base, sol)
         say('')
+        setProgress(100, '解题过程已就绪')
+        setTimeout(() => setProgress(null), 400)
         show('solution')
         return
       } catch (e) {
@@ -1099,6 +1128,7 @@ async function generateSolution(btn: HTMLButtonElement): Promise<void> {
         console.warn(`[geo3d] 解题过程 推理档 ${effort} 失败：${lastProblem}`)
       }
     }
+    setProgress(null)
     say(`三档推理都试过了，解题过程还是没出来。最后一次卡在：${lastProblem}`, 'err')
     show('text')
   } finally {
