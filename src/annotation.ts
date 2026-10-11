@@ -1,4 +1,5 @@
 import { arcPoints, planeNormal, projectOnPlane } from './angle.ts'
+import { parseExpr } from './symbolic.ts'
 import type { Vec3 } from './solver.ts'
 
 /**
@@ -15,11 +16,14 @@ import type { Vec3 } from './solver.ts'
 
 export type AngleSpec =
   /** 直线 p 与直线 q 的夹角 */
-  | { kind: 'lineLine'; p: [string, string]; q: [string, string]; value: string }
+  | { kind: 'lineLine'; p: [string, string]; q: [string, string]; label?: string; value?: string; of?: AngleUnit }
   /** 直线与平面的夹角 */
-  | { kind: 'linePlane'; line: [string, string]; plane: [string, string, string]; value: string }
+  | { kind: 'linePlane'; line: [string, string]; plane: [string, string, string]; label?: string; value?: string; of?: AngleUnit }
   /** 二面角：棱为 edge，inA 与 inB 分别是两个半平面内（不在棱上）的点 */
-  | { kind: 'dihedral'; edge: [string, string]; inA: string; inB: string; value: string }
+  | { kind: 'dihedral'; edge: [string, string]; inA: string; inB: string; label?: string; value?: string; of?: AngleUnit }
+
+/** value 这个数是什么意思：度数，还是角的余弦、正弦 */
+export type AngleUnit = 'degrees' | 'cos' | 'sin'
 
 export interface Annotation {
   /** 弧心 */
@@ -31,10 +35,14 @@ export interface Annotation {
   extraEdges: [Vec3, Vec3][]
   /** 度数标签摆在哪 */
   labelAt: Vec3
-  /** 标签文字，例如 ∠ABC = 60° */
+  /** 要显示的文字 */
   text: string
-  /** 本地算出来的度数，仅供核对 */
+  /** 本地算出来的度数 */
   degrees: number
+  /** 模型给的写法有没有过反验；模型没给 value 时是 undefined */
+  verified?: boolean
+  /** 反验没过的原因 */
+  mismatch?: string
 }
 
 const sub = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
@@ -49,6 +57,39 @@ const unit = (a: Vec3): Vec3 | null => {
 }
 const clamp = (x: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, x))
 const DEG = 180 / Math.PI
+
+/**
+ * 决定这个角在图上显示成什么文字。
+ *
+ * 原则：**度数永远由本地算**，模型给的写法只是「更好看的排版」。
+ * 模型报得出、且与本地算出来的一致，就用它的写法（例如 cos θ = √3/6）；
+ * 报不出或者对不上，就退回本地算出的度数 —— 宁可难看，也不能显示一个可能错的数。
+ */
+export function formatAngle(spec: AngleSpec, degrees: number): { text: string; verified?: boolean; mismatch?: string } {
+  const label = spec.label?.trim() ?? ''
+  const degText = `${degrees.toFixed(2)}°`
+  const fallback = label ? `${label} = ${degText}` : degText
+  if (!spec.value) return { text: fallback }
+
+  const of: AngleUnit = spec.of ?? 'degrees'
+  const want =
+    of === 'cos' ? Math.cos((degrees * Math.PI) / 180) : of === 'sin' ? Math.sin((degrees * Math.PI) / 180) : degrees
+  // 度数容许一位小数的写法（35.26 与 35.2644 算一致）；余弦正弦按绝对误差比
+  const tol = of === 'degrees' ? 0.06 : 5e-4
+
+  let got: number
+  try {
+    got = parseExpr(spec.value)
+  } catch (e) {
+    return { text: fallback, verified: false, mismatch: `看不出「${spec.value}」是什么：${e instanceof Error ? e.message : e}` }
+  }
+  if (Math.abs(got - want) <= tol) return { text: label ? `${label} = ${spec.value}` : spec.value, verified: true }
+  return {
+    text: fallback,
+    verified: false,
+    mismatch: `模型写 ${spec.value}，本地按${of === 'cos' ? '余弦' : of === 'sin' ? '正弦' : '度数'}算是 ${want.toFixed(4)}`,
+  }
+}
 
 export function buildAnnotation(
   spec: AngleSpec,
@@ -93,7 +134,18 @@ export function buildAnnotation(
     if (!from || !to) return null
 
     const degrees = Math.acos(clamp(Math.abs(dot(from, to)), 0, 1)) * DEG
-    return { vertex, dirFrom: from, dirTo: to, extraEdges, labelAt: place(vertex, from, to), text: spec.value, degrees }
+    const fmt = formatAngle(spec, degrees)
+    return {
+      vertex,
+      dirFrom: from,
+      dirTo: to,
+      extraEdges,
+      labelAt: place(vertex, from, to),
+      text: fmt.text,
+      verified: fmt.verified,
+      mismatch: fmt.mismatch,
+      degrees,
+    }
   }
 
   if (spec.kind === 'linePlane') {
@@ -138,13 +190,16 @@ export function buildAnnotation(
     if (!to) return null
 
     const degrees = Math.asin(clamp(Math.abs(dot(from, n)), 0, 1)) * DEG
+    const fmt = formatAngle(spec, degrees)
     return {
       vertex,
       dirFrom: from,
       dirTo: to,
       extraEdges,
       labelAt: place(vertex, from, to),
-      text: spec.value,
+      text: fmt.text,
+      verified: fmt.verified,
+      mismatch: fmt.mismatch,
       degrees,
     }
   }
@@ -169,6 +224,7 @@ export function buildAnnotation(
   if (!dirA || !dirB) return null
 
   const degrees = Math.acos(clamp(dot(dirA, dirB), -1, 1)) * DEG
+  const fmt = formatAngle(spec, degrees)
   return {
     vertex: P,
     dirFrom: dirA,
@@ -179,7 +235,9 @@ export function buildAnnotation(
       [P, add(P, mul(dirB, radius))],
     ],
     labelAt: place(P, dirA, dirB),
-    text: spec.value,
+    text: fmt.text,
+      verified: fmt.verified,
+      mismatch: fmt.mismatch,
     degrees,
   }
 }

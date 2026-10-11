@@ -1,4 +1,4 @@
-import { buildAnnotation, suggestRadius } from './annotation.ts'
+import { buildAnnotation, suggestRadius, type AngleSpec } from './annotation.ts'
 import type { Vec3 } from './solver.ts'
 
 /**
@@ -116,6 +116,47 @@ ok(
   '退化成点时返回 null',
   buildAnnotation({ kind: 'lineLine', p: ['A', 'A'], q: ['A', 'B'], value: 'x' }, at, R) === null,
 )
+
+console.log('\n【显示文字：度数永远由本地算，模型给的写法必须过反验】')
+{
+  const lineLine: AngleSpec = { kind: 'lineLine', p: ['A', 'B'], q: ['A', 'D'], label: '∠BAD' }
+  const a = buildAnnotation(lineLine, at, R)
+  ok('模型没给 value 时，显示本地算出的度数', a?.text === '∠BAD = 90.00°', a?.text ?? '(空)')
+  ok('没给 value 就不算「未通过」', a?.verified === undefined)
+
+  // 模型报对了：直接用它的排版
+  const good = buildAnnotation({ ...lineLine, value: '90°', of: 'degrees' }, at, R)
+  ok('模型报对了就用它的写法', good?.text === '∠BAD = 90°' && good?.verified === true, good?.text ?? '')
+
+  // 模型报错了：不能显示错的，退回本地算的度数
+  const bad = buildAnnotation({ ...lineLine, value: '60°', of: 'degrees' }, at, R)
+  ok('模型报错了就退回本地度数', bad?.text === '∠BAD = 90.00°' && bad?.verified === false, bad?.text ?? '')
+  ok('并且说明哪里对不上', !!bad?.mismatch, bad?.mismatch ?? '')
+
+  // 余弦写法：A₁C 与底面所成角的余弦是 √6/3
+  const lp: AngleSpec = { kind: 'linePlane', line: ['A1', 'C'], plane: ['A', 'B', 'D'], label: '线面角' }
+  const cosOk = buildAnnotation({ ...lp, value: '√6/3', of: 'cos' }, at, R)
+  ok('余弦形式的正确答案能通过', cosOk?.text === '线面角 = √6/3' && cosOk?.verified === true, cosOk?.text ?? '')
+
+  const cosBad = buildAnnotation({ ...lp, value: '√3/3', of: 'cos' }, at, R)
+  ok('把余弦写错会被拦下（√3/3 是另一个角的值）', cosBad?.verified === false, cosBad?.mismatch ?? '')
+
+  // 一位小数的度数写法应当算通过
+  const rounded = buildAnnotation({ ...lp, value: '35.3', of: 'degrees' }, at, R)
+  ok('一位小数的度数写法算通过', rounded?.verified === true, rounded?.mismatch ?? '')
+
+  // 完全看不懂的写法
+  const junk = buildAnnotation({ ...lineLine, value: '九十度' }, at, R)
+  ok('看不懂的写法退回本地度数并说明', junk?.text === '∠BAD = 90.00°' && !!junk?.mismatch, junk?.mismatch ?? '')
+
+  // 二面角的标准答案：余弦为 √3/3
+  const dh = buildAnnotation(
+    { kind: 'dihedral', edge: ['B', 'D'], inA: 'A1', inB: 'A', label: '二面角 A₁-BD-A', value: '√3/3', of: 'cos' },
+    at,
+    R,
+  )
+  ok('二面角的余弦写法也能通过', dh?.verified === true, dh?.text ?? '')
+}
 
 console.log(`\n${failed === 0 ? '✓ 全部通过' : `✗ ${failed} 项未通过`}`)
 if (failed > 0) process.exit(1)

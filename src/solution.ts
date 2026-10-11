@@ -49,25 +49,41 @@ function parseAngle(raw: unknown, i: number, ref: (x: unknown, what: string) => 
   if (!(ANGLE_KINDS as readonly string[]).includes(kind)) {
     throw new SolutionError(`第 ${i + 1} 个角的类型「${kind}」我还不会画`)
   }
-  const value = str(raw.value, `第 ${i + 1} 个角的 value`)
+  // label 是「这个角叫什么」，value 是「它多大」。两者都可以不给：
+  // 度数反正由本地算，模型给的写法只是更好看的排版，对不上会被丢掉。
+  const label = raw.label === undefined ? undefined : str(raw.label, `第 ${i + 1} 个角的 label`)
+  const value = raw.value === undefined ? undefined : str(raw.value, `第 ${i + 1} 个角的 value`)
+  let of: AngleSpec['of']
+  if (raw.of !== undefined) {
+    const text = str(raw.of, `第 ${i + 1} 个角的 of`)
+    if (text !== 'degrees' && text !== 'cos' && text !== 'sin') {
+      throw new SolutionError(`第 ${i + 1} 个角的 of 只能写 degrees、cos 或 sin，收到「${text}」`)
+    }
+    of = text
+  }
+
   const pair = (x: unknown, what: string): [string, string] => {
     const a = arr(x, what).map((y) => ref(y, what))
     if (a.length !== 2) throw new SolutionError(`${what} 应该是两个点`)
     return a as [string, string]
   }
-  if (kind === 'lineLine') return { kind, p: pair(raw.p, '直线的两个端点'), q: pair(raw.q, '直线的两个端点'), value }
+  if (kind === 'lineLine') {
+    return { kind, p: pair(raw.p, '直线的两个端点'), q: pair(raw.q, '直线的两个端点'), label, value, of }
+  }
   if (kind === 'linePlane') {
     const line = pair(raw.line, '直线的两个端点')
     const plane = arr(raw.plane, '平面的三个点').map((y) => ref(y, '平面'))
     if (plane.length !== 3) throw new SolutionError('平面应该是三个点')
-    return { kind, line, plane: plane as [string, string, string], value }
+    return { kind, line, plane: plane as [string, string, string], label, value, of }
   }
   return {
     kind: 'dihedral',
     edge: pair(raw.edge, '棱的两个端点'),
     inA: ref(raw.inA, '第一个面内的点'),
     inB: ref(raw.inB, '第二个面内的点'),
+    label,
     value,
+    of,
   }
 }
 

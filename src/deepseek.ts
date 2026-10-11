@@ -184,7 +184,12 @@ const SOLVE_SYSTEM = `你是高中数学立体几何的解题助手。用户给�
       "uses": ["A","B","D"]
     }
   ],
-  "answers": [{"label":"(1)","value":"4"}]
+  "answers": [{"label":"(1)","value":"4"}],
+  "angles": [
+    {"kind":"lineLine","p":["A","B"],"q":["A","D"],"label":"∠BAD","value":"90°","of":"degrees"},
+    {"kind":"linePlane","line":["A1","C"],"plane":["A","B","D"],"label":"A₁C 与底面所成角","value":"√3/3","of":"cos"},
+    {"kind":"dihedral","edge":["B","D"],"inA":"A1","inB":"A","label":"二面角 A₁-BD-A","value":"√6/3","of":"cos"}
+  ]
 }
 
 关于步骤：
@@ -201,6 +206,17 @@ const SOLVE_SYSTEM = `你是高中数学立体几何的解题助手。用户给�
 - addEdges 是要画出来的辅助线段，两个端点必须已经存在。
 - uses 填这一步主要用到的已有元素名字，用来在图上高亮。
 - 不要重复画题面本来就有的线段。
+
+关于 angles：
+- 把这道题里「值得在图上标出来的角」列出来，最多四个，只列解题真正用到的。
+- 三种画法，kind 只能取这三个：
+  lineLine —— 两条直线的夹角。p 与 q 各是两个点；两条线共点时角就画在公共点上，不共点时会自动平移到一起。
+  linePlane —— 直线与平面所成角。line 是直线的两个端点，plane 是平面上三个不共线的点。
+    注意：这个角画在「斜线」与「它在该平面上的射影」之间，射影线程序会自己补，你不用管。
+  dihedral —— 二面角。edge 是棱的两个端点，inA 与 inB 分别是两个半平面内、不在棱上的点。
+- label 写这个角叫什么（如 ∠BAD、θ、二面角 A₁-BD-A），value 写它的大小，of 说明 value 是度数还是余弦/正弦（degrees / cos / sin，缺省是 degrees）。
+- value 会被程序自己算一遍来核对：对不上就不显示，所以宁可只写 label 不写 value，也不要猜一个数。
+- 线面角与二面角默认不会画出来（要用户手动打开），但请照常列出来，把选择权留给用户。
 
 如果这道题的解法超出了上面这些辅助线画法，直接返回 {"unsupported":"说明是哪一步表达不了"}，不要硬凑。`
 

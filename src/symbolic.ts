@@ -27,6 +27,9 @@ export function normalizeExpr(raw: string): string {
   s = s.replace(/[×⋅·✕⨯]/g, '*')
   s = s.replace(/[−–—]/g, '-')
   s = s.replace(/[（]/g, '(').replace(/[）]/g, ')')
+  // 角度一律按度数处理，所以度符号只是个单位标记，去掉即可。
+  // 不加这一条，模型写的「35.26°」会整串解析失败，于是所有度数形式的写法都被误判成对不上。
+  s = s.replace(/[°º˚]/g, '')
   s = s.replace(/\s+/g, '')
   return s
 }

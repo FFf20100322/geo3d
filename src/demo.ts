@@ -105,10 +105,11 @@ export const DEMO_SOLUTION: unknown = {
     },
   ],
   answers: [],
-  // 三类角各来一个，方便一进 3D 就能验证弧画得对不对
+  // 三类角各来一个，方便一进 3D 就能验证弧画得对不对。
+  // value 会被本地算一遍来核对：对得上才用这个写法，对不上就退回本地算出的度数。
   angles: [
-    { kind: 'lineLine', p: ['A', 'B'], q: ['A', 'D'], value: '∠BAD = 90°' },
-    { kind: 'linePlane', line: ['A1', 'C'], plane: ['A', 'B', 'D'], value: 'A₁C 与底面 ≈35.26°' },
-    { kind: 'dihedral', edge: ['B', 'D'], inA: 'A1', inB: 'A', value: 'A₁-BD-A ≈54.74°' },
+    { kind: 'lineLine', p: ['A', 'B'], q: ['A', 'D'], label: '∠BAD', value: '90°', of: 'degrees' },
+    { kind: 'linePlane', line: ['A1', 'C'], plane: ['A', 'B', 'D'], label: 'A₁C 与底面所成角', value: '√6/3', of: 'cos' },
+    { kind: 'dihedral', edge: ['B', 'D'], inA: 'A1', inB: 'A', label: '二面角 A₁-BD-A', value: '√3/3', of: 'cos' },
   ],
 }

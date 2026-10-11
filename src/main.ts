@@ -97,15 +97,25 @@ function syncSceneChrome(): void {
   }
 
   $('player').style.display = onSceneView && editMode && currentSolution ? 'block' : 'none'
-  // 标注开关只在有角度可标时出现
-  $('annot-toggle').style.display = onSceneView && currentAnnotations.length ? 'block' : 'none'
-  $('annot-toggle').textContent = annotOn ? '标注 开' : '标注'
+  updateAnnotButton()
   syncViewInset()
 }
 
 // ---- 角度标注 ----
-let annotOn = false
-let currentAnnotations: AnnotationShape[] = []
+/**
+ * 标注分三档，用一个按钮循环。
+ * 依据是你先前定的「线面角与二面角默认不画」——这两类要多补射影线和平面角，
+ * 一上来就全画出来会把图挤乱，所以默认只画最常见的线线角。
+ */
+const ANNOT_LABELS = ['标注', '标注：常见', '标注：全部']
+let annotMode: 0 | 1 | 2 = 0
+let currentAnnotations: { shape: AnnotationShape; kind: string }[] = []
+
+/** 按当前档位决定画哪些 */
+function shownAnnotations(): AnnotationShape[] {
+  if (annotMode === 0) return []
+  return currentAnnotations.filter((a) => annotMode === 2 || a.kind === 'lineLine').map((a) => a.shape)
+}
 
 /** 按当前坐标重算所有角度标注。动点一动角度会变，所以要跟着重算。 */
 function refreshAnnotations(): void {
@@ -113,16 +123,32 @@ function refreshAnnotations(): void {
   const sol = currentSolution
   const pts = currentSolvedAll
   currentAnnotations = []
+  const doubts: string[] = []
   if (base && sol && pts && sol.angles.length) {
     const radius = suggestRadius(Object.values(pts))
     const at = (n: string) => pts[n]
     for (const spec of sol.angles) {
       const a = buildAnnotation(spec, at, radius)
-      if (a) currentAnnotations.push(arcShape(a, radius))
+      if (!a) continue
+      // 模型报的值没通过反验：图上用的是本地算的数，但要让用户知道有这么回事
+      if (a.verified === false) doubts.push(`${spec.label ?? '某个角'}：${a.mismatch ?? '对不上'}`)
+      currentAnnotations.push({ shape: arcShape(a, radius), kind: spec.kind })
     }
   }
-  scene?.setAnnotations(annotOn ? currentAnnotations : [])
-  $('annot-toggle').style.display = onSceneView && currentAnnotations.length ? 'block' : 'none'
+  scene?.setAnnotations(shownAnnotations())
+  annotDoubts = doubts
+  updateAnnotButton()
+}
+
+/** 标注里有几个角的值没通过反验 */
+let annotDoubts: string[] = []
+
+function updateAnnotButton(): void {
+  const btn = $('annot-toggle')
+  btn.style.display = onSceneView && currentAnnotations.length ? 'block' : 'none'
+  const base = ANNOT_LABELS[annotMode] ?? '标注'
+  btn.textContent = annotMode > 0 && annotDoubts.length ? `${base} · ${annotDoubts.length}项存疑` : base
+  btn.title = annotDoubts.length ? annotDoubts.join('\n') : '点一下切换：关 / 只常见角 / 全部角'
 }
 
 /** 当前渲染场景里所有点的坐标，拖动动点时以它为基准重算 */
@@ -373,7 +399,7 @@ function applyMoving(fromPanel = false): void {
   }
   if (Object.keys(changed).length) scene?.setPositions(changed)
   // 角度会随动点变化，所以标注要跟着重算（scene3d 内部就地复用对象，不会每帧新建）
-  if (annotOn) refreshAnnotations()
+  if (annotMode > 0) refreshAnnotations()
   // 手指拖动时面板要跟着刷新；从面板自己改的就不用刷（正在输入的框会被跳过）
   if (!fromPanel) syncPanelValues()
 }
@@ -567,9 +593,9 @@ $('btn-back').onclick = () => show('photo')
 $('scene-caption').onclick = () => show('text')
 $('mode-toggle').onclick = () => setEditMode(!editMode)
 $('annot-toggle').onclick = () => {
-  annotOn = !annotOn
-  refreshAnnotations()
-  syncSceneChrome()
+  annotMode = (((annotMode + 1) % 3) as 0 | 1 | 2)
+  scene?.setAnnotations(shownAnnotations())
+  updateAnnotButton()
 }
 $('dyn-toggle').onclick = () => {
   dynOpen = true
