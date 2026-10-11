@@ -13,6 +13,7 @@ import {
   type ProblemCandidate,
 } from './deepseek'
 import { closestParamOnSegment, faceParams, rayPlaneHit, type Ray } from './drag'
+import { buildElements } from './elements'
 import {
   arcShape,
   buildAnnotation,
@@ -24,7 +25,8 @@ import {
 import { createHistory, type HistoryRecord } from './history'
 import { DEMO_PROBLEM, DEMO_SCENE, DEMO_SOLUTION } from './demo'
 import { checkFacesPlanar, edgeKey, faceKey, parseScene, toRenderable, type Scene } from './scene'
-import { mountScene3d } from './scene3d'
+// 显式带上 Highlight：名字与浏览器内置的那个同名类型撞车，不导入就会用错
+import { mountScene3d, type Highlight } from './scene3d'
 import { mergeSolution, parseSolution, stepTimeline, type Solution } from './solution'
 import { isMoving, reevaluate, solve, type Vec3 } from './solver'
 
@@ -97,7 +99,9 @@ function syncSceneChrome(): void {
   $('scene-tools').style.display = onSceneView ? 'flex' : 'none'
   $('mode-toggle').textContent = editMode ? '完成' : '调节'
 
-  const canTune = onSceneView && editMode && moving.length > 0
+  // 面板里现在放两样东西：动点的滑杆、以及元素清单。
+  // 元素清单总是有的，所以这个入口在调节模式下一直可用（不再只在有动点时出现）。
+  const canTune = onSceneView && editMode
   $('dyn-toggle').style.display = canTune && !dynOpen ? 'block' : 'none'
 
   const panelOpen = canTune && dynOpen
@@ -235,6 +239,10 @@ function renderDynRows(moving: ReturnType<typeof movingPoints>): void {
   body.innerHTML = ''
   panelRows = []
 
+  // 元素清单放最上面：它是「这张图上有什么」的索引，滑杆是细调。
+  // 放下面的话，动点一多（三个点就是六根滑杆）清单就被挤出可视区，等于没有。
+  renderElementSection(body)
+
   /**
    * 一行 = 标题 + 数值输入 + 滑杆 + 换算读数。
    * 参数本身固定是 0 到 1，但给用户输入的是更有意义的那个量（例如「距 B 的长度」），
@@ -363,7 +371,93 @@ function renderDynRows(moving: ReturnType<typeof movingPoints>): void {
   }
 }
 
-/** 3D 页上的动点 */
+/**
+ * 元素清单：把本题的点、棱、面列出来。
+ *
+ * 点与棱是「点一下就高亮」，面是「勾选框直接控制显隐」——
+ * 面的勾选框**不自己记状态**，每次渲染都去问 3D 那份真状态（isFaceHidden）。
+ * 记两份迟早会出现「清单说开着、图上是关的」，而只要出现过一次，用户就不敢信清单了。
+ */
+function renderElementSection(body: HTMLElement): void {
+  const fig = currentScene
+  if (!fig) return
+
+  const list = buildElements(
+    { points: fig.points, edges: currentEdges, faces: currentFaces },
+    (key) => scene?.isFaceHidden(key) ?? false,
+  )
+
+  const section = (title: string) => {
+    const box = document.createElement('div')
+    box.className = 'el-sec'
+    const head = document.createElement('div')
+    head.className = 'el-title'
+    head.textContent = title
+    box.appendChild(head)
+    const chips = document.createElement('div')
+    chips.className = 'el-chips'
+    box.appendChild(chips)
+    body.appendChild(box)
+    return chips
+  }
+
+  /** 点与棱：点一下切换选中，选中就高亮 */
+  const toggleChip = (el: HTMLElement, kind: 'points' | 'edges', key: string) => {
+    el.addEventListener('click', () => {
+      if (picked[kind].has(key)) picked[kind].delete(key)
+      else picked[kind].add(key)
+      el.classList.toggle('on', picked[kind].has(key))
+      applyStep()
+    })
+  }
+
+  if (list.points.length) {
+    const chips = section(`点（${list.points.length}）`)
+    for (const p of list.points) {
+      const el = document.createElement('button')
+      el.className = 'el-chip'
+      if (p.moving) el.classList.add('mov')
+      if (picked.points.has(p.key)) el.classList.add('on')
+      el.textContent = p.label
+      el.title = p.moving ? '动点，可以直接拖' : '点一下在图上高亮'
+      toggleChip(el, 'points', p.key)
+      chips.appendChild(el)
+    }
+  }
+
+  if (list.edges.length) {
+    const chips = section(`棱（${list.edges.length}）`)
+    for (const e of list.edges) {
+      const el = document.createElement('button')
+      el.className = 'el-chip'
+      if (picked.edges.has(e.key)) el.classList.add('on')
+      el.textContent = e.label
+      el.title = '点一下在图上高亮'
+      toggleChip(el, 'edges', e.key)
+      chips.appendChild(el)
+    }
+  }
+
+  if (list.faces.length) {
+    const chips = section(`面（${list.faces.length}）`)
+    for (const f of list.faces) {
+      const el = document.createElement('label')
+      el.className = 'el-chip face'
+      const box = document.createElement('input')
+      box.type = 'checkbox'
+      box.checked = !f.hidden
+      box.addEventListener('change', () => {
+        // 走 3D 那条路去改，改完由它统一刷新（按钮文案与清单回显都在那一次里同步）
+        scene?.setFaceHidden(f.key, !box.checked)
+        syncSceneChrome()
+      })
+      const text = document.createElement('span')
+      text.textContent = f.label
+      el.append(box, text)
+      chips.appendChild(el)
+    }
+  }
+}
 function movingPoints() {
   return (currentScene?.points ?? []).filter(isMoving)
 }
@@ -401,7 +495,17 @@ function syncViewInset(): void {
     const r = el.getBoundingClientRect()
     if (r.height > 0) tops.push(r.top)
   }
-  const bottom = tops.length ? Math.max(0, window.innerHeight - Math.min(...tops) + 10) : 0
+  const lowestTop = tops.length ? Math.min(...tops) : window.innerHeight
+  const bottom = tops.length ? Math.max(0, window.innerHeight - lowestTop + 10) : 0
+
+  // 面板不能长到播放条底下 —— 那样播放条会画在面板上面，两样东西叠在一起谁也看不清。
+  // 按「面板顶到最上面那条底栏之间」的可用高度来限制内容区，留出收起按钮与内边距的位置。
+  const panel = $('dyn-panel')
+  if (panel.style.display === 'flex') {
+    const panelTop = panel.getBoundingClientRect().top
+    const avail = lowestTop - panelTop - 72
+    $('dyn-body').style.maxHeight = `${Math.max(140, Math.min(avail, window.innerHeight * 0.6))}px`
+  }
 
   scene?.setViewInset(top, bottom)
 }
@@ -1283,6 +1387,29 @@ let stepIndex = -1 // -1 表示全部显示
 let playing = false
 let playTimer: number | undefined
 
+/**
+ * 从元素清单里手动选中的点/棱/面。
+ * 它与解题步骤的高亮**取并集**：步骤高亮是「这一步用到什么」，
+ * 手动点选是「我想看什么」，两者互不覆盖，用户不必在它们之间做选择。
+ */
+const picked = { points: new Set<string>(), edges: new Set<string>(), faces: new Set<string>() }
+
+/** 当前该高亮哪些元素（步骤 ∪ 手动点选）。都没有就返回 null 表示不强调任何东西。 */
+function highlightSets(): Highlight | null {
+  const sol = currentSolution
+  const step = sol && stepIndex >= 0 ? sol.steps[stepIndex] : null
+  const points = new Set(picked.points)
+  const edges = new Set(picked.edges)
+  const faces = new Set(picked.faces)
+  if (step) {
+    for (const p of step.uses.points) points.add(p)
+    for (const [a, b] of step.uses.edges) edges.add(edgeKey(a, b))
+    for (const f of step.uses.faces) faces.add(faceKey(f))
+  }
+  if (!points.size && !edges.size && !faces.size) return null
+  return { points, edges, faces }
+}
+
 function applyStep(): void {
   const base = currentScene
   const sol = currentSolution
@@ -1295,7 +1422,7 @@ function applyStep(): void {
 
   if (stepIndex < 0) {
     scene.setReveal(null)
-    scene.setHighlight(null)
+    scene.setHighlight(highlightSets())
     label.textContent = '全部'
     text.textContent = '已显示全部辅助线。拖上面的滑杆或点「播放」，可以按解题步骤逐条看它们是怎么画出来的。'
     return
@@ -1304,11 +1431,7 @@ function applyStep(): void {
   const at = tl.afterStep[stepIndex]
   scene.setReveal({ points: at.points, edges: at.edges })
   const step = sol.steps[stepIndex]
-  scene.setHighlight({
-    points: new Set(step.uses.points),
-    edges: new Set(step.uses.edges.map(([a, b]) => edgeKey(a, b))),
-    faces: new Set(step.uses.faces.map((f) => faceKey(f))),
-  })
+  scene.setHighlight(highlightSets())
   label.textContent = `${stepIndex + 1} / ${sol.steps.length}`
   text.textContent = `${stepIndex + 1}. ${step.title}`
 }
