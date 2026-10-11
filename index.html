@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>立体几何 3D 助手 · M0-2</title>
+    <style>
+      :root { color-scheme: dark; }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #0f1115; color: #e6e9ef; font-family: system-ui, -apple-system, "Microsoft YaHei", sans-serif; }
+      body { font-size: 15px; line-height: 1.7; }
+
+      #app { position: fixed; inset: 0; }
+      /* 画布必须铺满容器：漏了这行，画布会退回 canvas 默认尺寸，和标签层对不上导致字母错位 */
+      #app canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+      /* 点标注层：DOM 覆盖，永远画在最上层 —— 「点标注必须常驻」就是靠这层保证的 */
+      #labels { position: fixed; inset: 0; pointer-events: none; }
+      #labels .pt { color: #fff; font-size: 15px; font-weight: 700; text-shadow: 0 0 3px #000, 0 0 6px #000, 0 1px 2px #000; }
+
+      #bar { position: fixed; top: 0; left: 0; right: 0; height: 52px; display: flex; align-items: center; gap: 4px; padding: 0 8px 0 12px; background: rgba(15,17,21,.88); backdrop-filter: blur(8px); border-bottom: 1px solid #222833; z-index: 20; }
+      #bar-title { font-weight: 650; margin-right: auto; font-size: 15px; }
+      #bar button { padding: 7px 11px; font-size: 14px; border-color: transparent; border-radius: 8px; }
+
+      .view { position: fixed; inset: 0; padding: 64px 16px 24px; overflow-y: auto; background: #0f1115; display: none; z-index: 10; }
+      .view.on { display: block; }
+      .view h2 { font-size: 19px; margin: 4px 0 6px; }
+      .muted { color: #98a2b3; font-size: 13px; }
+      .gap { height: 14px; }
+
+      button, .filebtn { font: inherit; color: #e6e9ef; background: #1a2029; border: 1px solid #2b3442; border-radius: 10px; padding: 11px 14px; cursor: pointer; }
+      button.primary, .filebtn { background: #2f6df6; border-color: #2f6df6; color: #fff; font-weight: 600; }
+      button.ghost { background: transparent; }
+      button[disabled] { opacity: .45; pointer-events: none; }
+
+      .filebtn { display: block; text-align: center; padding: 18px; font-size: 17px; }
+      textarea, input[type="password"], input[type="text"] { font: inherit; width: 100%; color: #e6e9ef; background: #141a22; border: 1px solid #2b3442; border-radius: 10px; padding: 10px 12px; resize: vertical; }
+      label { display: block; margin: 14px 0 6px; font-size: 13px; color: #98a2b3; }
+      .row { display: flex; gap: 10px; flex-wrap: wrap; }
+      .row > * { flex: 1 1 auto; }
+
+      #photo-preview img { width: 100%; border-radius: 12px; border: 1px solid #2b3442; margin-top: 14px; }
+      #photo-preview:empty { display: none; }
+
+      #pick-image { position: relative; margin-top: 12px; }
+      #pick-image img { width: 100%; display: block; border-radius: 12px; border: 1px solid #2b3442; }
+      #pick-image .box { position: absolute; border: 2px solid #2f6df6; background: rgba(47,109,246,.16); border-radius: 6px; cursor: pointer; }
+      #pick-image .box b { position: absolute; top: -1px; left: -1px; background: #2f6df6; color: #fff; font-size: 12px; padding: 0 5px; border-radius: 5px 0 5px 0; }
+      #pick-list { margin-top: 14px; display: flex; flex-direction: column; gap: 10px; }
+      #pick-list button { text-align: left; line-height: 1.5; }
+      #pick-list b { color: #7aa2ff; }
+      #pick-list span { color: #98a2b3; font-size: 13px; }
+      #status { margin-top: 12px; font-size: 13px; min-height: 20px; }
+      #status.err { color: #ff7b72; }
+      #status.ok { color: #4ec9a5; }
+      #uncertain:empty { display: none; }
+      #uncertain { margin-top: 10px; padding: 10px 12px; border-radius: 10px; background: #2a2213; border: 1px solid #5a4a1d; font-size: 13px; }
+
+      #points:empty { display: none; }
+      #points { margin-bottom: 8px; padding: 10px 12px; border-radius: 10px; background: #16202e; border: 1px solid #2b3442; }
+      #points .pt-head { font-size: 13px; color: #98a2b3; }
+      #points .pt-list { font-size: 17px; letter-spacing: .06em; margin: 6px 0; word-break: break-all; }
+      #points .pt-warn { font-size: 12px; color: #d8a657; }
+      #balance { margin-top: 12px; white-space: pre-wrap; }
+      #top-balance { font-size: 12px; color: #7dd3a0; background: rgba(46,204,113,.12); border: 1px solid rgba(46,204,113,.3); border-radius: 999px; padding: 3px 9px; margin-right: 4px; white-space: nowrap; }
+      /* 窄屏上把标题让出去，保证余额与四个入口都放得下 */
+      @media (max-width: 400px) { #bar-title { display: none; } }
+      #hint { position: fixed; left: 12px; bottom: 10px; font-size: 12px; opacity: .55; pointer-events: none; z-index: 15; display: none; }
+      #scene-caption { position: fixed; left: 12px; right: 12px; bottom: 32px; z-index: 15; display: none; padding: 8px 12px; border-radius: 10px; background: rgba(20,26,34,.86); border: 1px solid #2b3442; font-size: 13px; color: #cbd5e1; cursor: pointer; }
+      #labels .pt.aux { color: #7dd3a0; }
+
+      #player { position: fixed; left: 12px; right: 12px; bottom: 76px; z-index: 16; display: none; }
+      #player .pl-row { display: flex; gap: 6px; align-items: center; padding: 6px; border-radius: 10px; background: rgba(20,26,34,.9); border: 1px solid #2b3442; }
+      button.small { padding: 6px 9px; font-size: 13px; border-radius: 8px; }
+      #pl-label { flex: 1; text-align: center; font-size: 12px; color: #98a2b3; font-variant-numeric: tabular-nums; }
+      #pl-range { width: 100%; margin: 8px 0 0; accent-color: #2f6df6; }
+      #labels .pt.hl { color: #ffd166; font-size: 19px; }
+      #labels .pt.mov { color: #ffb84d; font-size: 18px; }
+
+      #dyn-panel { position: fixed; top: 60px; left: 12px; right: 12px; z-index: 16; display: none; flex-direction: column; padding: 10px 12px; border-radius: 10px; background: rgba(20,26,34,.94); border: 1px solid #2b3442; }
+      /* 内容自己滚，收起按钮钉在面板底部，不会被滚出去 */
+      #dyn-body { overflow-y: auto; max-height: 38vh; }
+      #dyn-collapse { flex: none; margin-top: 10px; width: 100%; padding: 8px; font-size: 13px; }
+      #dyn-toggle { position: fixed; top: 60px; right: 12px; z-index: 17; display: none; padding: 6px 10px; font-size: 13px; }
+      #dyn-panel .dyn-row + .dyn-row { margin-top: 12px; padding-top: 10px; border-top: 1px solid #222833; }
+      #dyn-panel .dyn-top { display: flex; align-items: center; gap: 8px; }
+      #dyn-panel label { flex: 1 1 auto; margin: 0; font-size: 13px; color: #cbd5e1; }
+      #dyn-panel input[type="number"] { flex: none; width: 96px; padding: 5px 8px; font-size: 14px; text-align: right; font-variant-numeric: tabular-nums; }
+      #dyn-panel input[type="range"] { width: 100%; margin: 8px 0 0; accent-color: #f0a020; }
+      #dyn-panel .dyn-read { margin-top: 4px; font-size: 12px; color: #98a2b3; font-variant-numeric: tabular-nums; }
+      /* 拖动滑杆时进入专注模式：只留下正在拖的那一条，其余省略。
+         面板变矮后 3D 区域会自动变大，这样一边拖一边能看清模型。 */
+      #dyn-panel.focusing { background: rgba(20,26,34,.72); padding: 8px 12px; }
+      #dyn-panel.focusing .dyn-row { display: none; }
+      #dyn-panel.focusing .dyn-row.dyn-focus { display: block; margin: 0; padding: 0; border: 0; }
+      #dyn-panel.focusing .dyn-row.dyn-focus .dyn-top { display: none; }
+      #dyn-panel.focusing #dyn-collapse { display: none; }
+      #dyn-panel.focusing input[type="range"] { margin: 4px 0 0; height: 28px; }
+      #pl-text { margin-top: 6px; padding: 7px 11px; border-radius: 10px; background: rgba(20,26,34,.86); border: 1px solid #2b3442; font-size: 13px; color: #cbd5e1; cursor: pointer; line-height: 1.5; }
+
+      #history-list { margin-top: 12px; display: flex; flex-direction: column; gap: 10px; }
+      #history-list:empty + .gap { display: none; }
+      .hitem { display: flex; gap: 10px; align-items: center; padding: 8px; border: 1px solid #2b3442; border-radius: 12px; background: #141a22; cursor: pointer; }
+      .hitem img, .hitem .hph { width: 56px; height: 56px; flex: none; border-radius: 8px; object-fit: cover; background: #0f1115; }
+      .hitem .hph { display: flex; align-items: center; justify-content: center; font-size: 12px; color: #7aa2ff; border: 1px solid #2b3442; }
+      .hbody { flex: 1 1 auto; min-width: 0; }
+      .htitle { font-size: 14px; line-height: 1.45; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+      .hmeta { font-size: 12px; color: #98a2b3; margin-top: 2px; }
+      .hdel { flex: none; padding: 6px 10px; font-size: 13px; }
+
+      #solution-answers:empty { display: none; }
+      #solution-answers { margin: 10px 0 4px; padding: 12px; border-radius: 12px; background: #16202e; border: 1px solid #2b3442; }
+      #solution-answers .ans { font-size: 15px; line-height: 1.9; }
+      #solution-answers b { color: #7dd3a0; }
+      #solution-steps { margin-top: 12px; display: flex; flex-direction: column; gap: 12px; }
+      .step { padding: 12px; border-radius: 12px; background: #141a22; border: 1px solid #2b3442; }
+      .step .st-head { display: flex; gap: 8px; align-items: baseline; font-weight: 650; }
+      .step .st-no { flex: none; color: #7aa2ff; font-variant-numeric: tabular-nums; }
+      .step .st-text { margin-top: 6px; line-height: 1.75; }
+      .step .st-why { margin-top: 6px; font-size: 13px; color: #d8a657; }
+      .step .st-draw { margin-top: 6px; font-size: 13px; color: #98a2b3; }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <div id="labels"></div>
+
+    <header id="bar">
+      <span id="bar-title">立体几何 3D</span>
+      <span id="top-balance" title="DeepSeek 账户余额">余额 --</span>
+      <button id="nav-photo" class="ghost">拍题</button>
+      <button id="nav-3d" class="ghost">3D</button>
+      <button id="nav-history" class="ghost">历史</button>
+      <button id="nav-settings" class="ghost">设置</button>
+    </header>
+
+    <section id="view-photo" class="view on">
+      <h2>拍下题目</h2>
+      <p class="muted">把整页拍进来就行，周围有别的题也没关系——系统会自己找出照片里的每一道题，再让你点选。尽量正对镜头、光线均匀。只支持印刷体。</p>
+      <div class="gap"></div>
+      <div class="row">
+        <label class="filebtn" for="file-camera">拍照</label>
+        <label class="filebtn" for="file-album">从相册选</label>
+      </div>
+      <input id="file-camera" type="file" accept="image/*" capture="environment" hidden />
+      <input id="file-album" type="file" accept="image/*" hidden />
+      <div class="gap"></div>
+      <button id="btn-demo" class="ghost">载入内置示例（不用拍照、不耗接口）</button>
+      <div id="photo-preview"></div>
+      <p id="status"></p>
+    </section>
+
+    <section id="view-pick" class="view">
+      <h2>选一道题</h2>
+      <p class="muted">这是照片里找到的题目。点框或点下面的列表都行。框只是提示，识别时会看整张照片，所以不会漏掉散落的已知条件。</p>
+      <div id="pick-image"></div>
+      <div id="pick-list"></div>
+      <div class="gap"></div>
+      <button id="btn-repick" class="ghost">重拍 / 换一张</button>
+    </section>
+
+    <section id="view-text" class="view">
+      <h2>识别结果，请核对</h2>
+      <p class="muted">有错就直接改。模型没认出来的条件，在下面单独补一行。</p>
+      <label for="problem-text">题目文字</label>
+      <div id="points"></div>
+      <textarea id="problem-text" rows="10"></textarea>
+      <label for="extra">补充或修改的条件（可以留空）</label>
+      <textarea id="extra" rows="3" placeholder="例如：AB=2，E 是 BC 的中点"></textarea>
+      <div id="uncertain"></div>
+      <div class="gap"></div>
+      <div class="row">
+        <button id="btn-regen" class="ghost">重拍 / 重识别</button>
+        <button id="btn-generate">生成 3D</button>
+        <button id="btn-solve" class="ghost">解题过程</button>
+      </div>
+      <p class="muted">认得不对就先改上面的文字，改完再点生成。模型漏掉的条件写在上面那个补充框里。改完不用手动保存，会自动存进历史。</p>
+    </section>
+
+    <section id="view-history" class="view">
+      <h2>以前拍过的题</h2>
+      <p class="muted">点一条就能重新打开。有 3D 的直接进 3D 页，只有文字的回到文字页。</p>
+      <div id="history-list"></div>
+      <div class="gap"></div>
+      <button id="btn-clear-history" class="ghost">清空全部</button>
+    </section>
+
+    <section id="view-solution" class="view">
+      <h2>解题过程</h2>
+      <div id="solution-answers"></div>
+      <div id="solution-steps"></div>
+      <div class="gap"></div>
+      <div class="row">
+        <button id="btn-solution-3d">看带辅助线的图形</button>
+        <button id="btn-solution-back" class="ghost">返回文字</button>
+      </div>
+    </section>
+
+    <section id="view-settings" class="view">
+      <h2>设置</h2>
+      <label for="api-key">DeepSeek API Key</label>
+      <input id="api-key" type="password" placeholder="sk-..." autocomplete="off" />
+      <label style="display:flex;align-items:center;gap:8px;margin-top:10px">
+        <input id="show-key" type="checkbox" style="width:auto;margin:0" />
+        <span>显示 Key（长按粘贴容易复制错，可以打开核对一下）</span>
+      </label>
+      <p class="muted">Key 只保存在这台手机上，不写进代码、也不发给任何第三方。</p>
+      <div class="gap"></div>
+      <button id="btn-test" class="primary">保存并查询余额</button>
+      <p id="balance" class="muted"></p>
+      <div class="gap"></div>
+      <button id="btn-back" class="ghost">返回拍题</button>
+    </section>
+
+    <button id="dyn-toggle" class="ghost">精确调节</button>
+    <div id="dyn-panel">
+      <div id="dyn-body"></div>
+      <button id="dyn-collapse" class="ghost">▲ 收起</button>
+    </div>
+    <div id="player">
+      <div class="pl-row">
+        <button id="pl-prev" class="ghost small">◀ 上一步</button>
+        <button id="pl-play" class="ghost small">▶ 播放</button>
+        <button id="pl-next" class="ghost small">下一步 ▶</button>
+        <span id="pl-label">全部</span>
+      </div>
+      <input id="pl-range" type="range" min="-1" max="0" step="1" value="-1" />
+      <div id="pl-text"></div>
+    </div>
+    <div id="scene-caption"></div>
+    <div id="hint">单指拖动旋转 · 双指缩放平移</div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

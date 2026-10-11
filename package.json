@@ -1,0 +1,34 @@
+{
+  "name": "geo3d",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "description": "立体几何拍照解题 3D 助手",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "selfcheck": "node src/geo.check.ts",
+    "solvecheck": "node src/solver.check.ts",
+    "textcheck": "node src/text.check.ts",
+    "scenecheck": "node src/scene.check.ts",
+    "historycheck": "node src/history.check.ts",
+    "solutioncheck": "node src/solution.check.ts",
+    "democheck": "node src/demo.check.ts",
+    "dragcheck": "node src/drag.check.ts",
+    "symboliccheck": "node src/symbolic.check.ts",
+    "check": "node src/geo.check.ts && node src/solver.check.ts && node src/text.check.ts && node src/scene.check.ts && node src/history.check.ts && node src/solution.check.ts && node src/demo.check.ts && node src/drag.check.ts && node src/symbolic.check.ts && tsc --noEmit",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "three": "^0.180.0"
+  },
+  "devDependencies": {
+    "@types/three": "^0.180.0",
+    "typescript": "^5.9.3",
+    "vite": "^6.4.4"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild"]
+  }
+}
