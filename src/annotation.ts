@@ -1,5 +1,5 @@
 import { arcPoints, planeNormal, projectOnPlane } from './angle.ts'
-import { parseExpr } from './symbolic.ts'
+import { parseExpr, verifySymbolic } from './symbolic.ts'
 import type { Vec3 } from './solver.ts'
 
 /**
@@ -378,8 +378,79 @@ export function enumerateAngles(edges: [string, string][], faces: string[][]): A
   return out
 }
 
-/** 从场景与坐标里算出半径该取多大 —— 太小看不见，太大压到别的元素 */
-export function suggestRadius(points: Vec3[]): number {
+/** 长度标注：只说「哪两个点之间」，数值一律本地算 */
+export interface LengthSpec {
+  /** 线段的两端 */
+  p: [string, string]
+  /** 想显示的名字，例如 AB。不给就用两端点名拼 */
+  label?: string
+  /** 模型声称的长度，例如 "2"、"2√3"、"4/3"。给了就必须过反验 */
+  value?: string
+}
+
+/**
+ * 造一条长度标注。
+ *
+ * 规矩与角度完全一致：**数值永远由本地算**，模型给的写法只是排版；
+ * 对得上就用它的排版，对不上就退回本地算出来的数，绝不让可能错的数字上屏。
+ *
+ * 标签摆在「线段中点再往外挪一点」的位置：直接摆在中点上会压住线段本身，
+ * 往外挪的方向取「背离图形中心」，这样标签总是落在图形外侧、不往里面挤。
+ */
+export function buildLength(
+  spec: LengthSpec,
+  at: (name: string) => Vec3 | undefined,
+  offset: number,
+): { shape: AnnotationShape; verified?: boolean; mismatch?: string; value: number } | null {
+  const A = at(spec.p[0])
+  const B = at(spec.p[1])
+  if (!A || !B) return null
+  const value = len(sub(B, A))
+  if (value < 1e-9) return null
+
+  const label = spec.label?.trim() || `${spec.p[0]}${spec.p[1]}`
+  const local = value.toFixed(3).replace(/\.?0+$/, '')
+  let text = `${label} = ${local}`
+  let verified: boolean | undefined
+  let mismatch: string | undefined
+
+  if (spec.value) {
+    const checked = verifySymbolic(spec.value, value)
+    if (checked.ok) {
+      text = `${label} = ${spec.value}`
+      verified = true
+    } else {
+      verified = false
+      mismatch = checked.reason
+    }
+  }
+
+  const mid = mul(add(A, B), 0.5)
+  const away = unit(sub(mid, centroid)) ?? [0, 0, 0]
+  const labelAt = add(mid, mul(away, offset))
+
+  return { shape: { arc: [], extras: [], labelAt, text }, verified, mismatch, value }
+}
+
+/** 算标签该往哪个方向躲开图形中心时用；调用方每次传同一份点集 */
+let centroid: Vec3 = [0, 0, 0]
+export function setCentroid(points: Vec3[]): void {
+  if (!points.length) {
+    centroid = [0, 0, 0]
+    return
+  }
+  let x = 0
+  let y = 0
+  let z = 0
+  for (const p of points) {
+    x += p[0]
+    y += p[1]
+    z += p[2]
+  }
+  centroid = [x / points.length, y / points.length, z / points.length]
+}
+
+/** 从场景与坐标里算出半径该取多大 —— 太小看不见，太大压到别的元素 */export function suggestRadius(points: Vec3[]): number {
   if (!points.length) return 0.5
   let lo = Infinity
   let hi = -Infinity
