@@ -413,7 +413,10 @@ function applyMoving(fromPanel = false): void {
   if (!fromPanel) syncPanelValues()
 }
 
-/** 3D 页底部那条说明：告诉你在看哪道题。点一下回到文字页。 */
+/**
+ * 3D 页底部那条说明：告诉你在看哪道题，同时也是去另一页的入口。
+ * 有解答时点它去解题过程（这时候再去文字页没意义），没解答时才回文字页改题面。
+ */
 function updateCaption(onScene: boolean) {
   const cap = $('scene-caption')
   const text = $<HTMLTextAreaElement>('problem-text').value.trim().replace(/\s+/g, ' ')
@@ -422,7 +425,9 @@ function updateCaption(onScene: boolean) {
     return
   }
   cap.style.display = 'block'
-  cap.textContent = text.length > 46 ? `${text.slice(0, 46)}…` : text
+  const short = text.length > 40 ? `${text.slice(0, 40)}…` : text
+  const 去哪 = currentSolution ? '看解题过程' : '改题面'
+  cap.textContent = `${short}　▸ ${去哪}`
 }
 
 let statusTimer: number | undefined
@@ -613,7 +618,7 @@ $('nav-settings').onclick = () => {
   void refreshBalance(true)
 }
 $('btn-back').onclick = () => show('photo')
-$('scene-caption').onclick = () => show('text')
+$('scene-caption').onclick = () => show(currentSolution ? 'solution' : 'text')
 $('mode-toggle').onclick = () => setEditMode(!editMode)
 $('annot-toggle').onclick = () => {
   annotMode = (((annotMode + 1) % 3) as 0 | 1 | 2)
