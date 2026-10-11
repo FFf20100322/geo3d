@@ -1,10 +1,10 @@
 import { DEMO_PROBLEM, DEMO_SCENE, DEMO_SOLUTION } from './demo.ts'
-import { checkFacesPlanar, parseScene, toRenderable } from './scene.ts'
+import { checkFacesPlanar, faceKey, parseScene, toRenderable } from './scene.ts'
 import { mergeSolution, parseElementName, parseSolution } from './solution.ts'
 import { isMoving, reevaluate, solve, type Vec3 } from './solver.ts'
 
 /**
- * 可运行的校验：把内置测试题（正四面体）从头到尾跑一遍。
+ * 可运行的校验：把内置测试题（正四面体 + 三个面内动点）从头到尾跑一遍。
  * 它是回归的种子 —— 以后任何一次改动把这个测试题弄坏了，这里会当场失败。
  * 跑 `pnpm democheck`。
  */
@@ -16,22 +16,29 @@ function ok(label: string, cond: boolean, extra = '') {
 }
 const d3 = (a: Vec3, b: Vec3) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2])
 const near = (a: number, b: number, tol = 1e-6) => Math.abs(a - b) < tol
+const sub = (a: Vec3, b: Vec3): Vec3 => [b[0] - a[0], b[1] - a[1], b[2] - a[2]]
+const cross = (a: Vec3, b: Vec3): Vec3 => [
+  a[1] * b[2] - a[2] * b[1],
+  a[2] * b[0] - a[0] * b[2],
+  a[0] * b[1] - a[1] * b[0],
+]
 
-console.log('【测试题：正四面体】')
+console.log('【测试题：正四面体，三个面上的动点】')
 ok('题面不是空的', DEMO_PROBLEM.trim().length > 0)
 
 console.log('\n【场景：解析 → 求解 → 验算】')
 const scene = parseScene(DEMO_SCENE)
-ok('解析成功', scene.points.length === 8, `${scene.points.length} 个点`)
-ok('四个面全是三角形', scene.faces.length === 4 && scene.faces.every((f) => f.length === 3))
-ok('识别出两个动点', scene.points.filter(isMoving).length === 2)
-ok('E 是棱上的动点', scene.points.some((p) => p.name === 'E' && p.kind === 'onSegment'))
-ok('F 是面内的动点', scene.points.some((p) => p.name === 'F' && p.kind === 'inFace'))
+ok('解析成功', scene.points.length === 7, `${scene.points.length} 个点`)
+ok('四个三角形面 + 一个动点张成的面', scene.faces.length === 5)
+ok('四个侧面都是三角形', scene.faces.slice(0, 4).every((f) => f.length === 3))
+ok('识别出三个动点（没有别的）', scene.points.filter(isMoving).length === 3)
+ok(
+  '三个动点各在一个侧面里',
+  ['E', 'F', 'M'].every((n) => scene.points.some((p) => p.name === n && p.kind === 'inFace')),
+)
 
 const solved = solve(scene.points, scene.constraints)
 ok('求解成功', solved.ok, `最大残差 ${solved.maxError.toExponential(2)}`)
-
-// 正四面体：六条棱全都等于 2
 const 棱 = [
   ['A', 'B'],
   ['B', 'C'],
@@ -43,130 +50,103 @@ const 棱 = [
 ok(
   '六条棱全部等于 2（这才叫正四面体）',
   棱.every(([a, b]) => near(d3(solved.points[a], solved.points[b]), 2, 1e-6)),
-  棱.map(([a, b]) => d3(solved.points[a], solved.points[b]).toFixed(4)).join(' '),
 )
-ok('四个面都真的共面', checkFacesPlanar(toRenderable(scene, solved.points)).length === 0)
+ok('五个面都真的共面（三个点当然共面，四个三角形面也要验）', checkFacesPlanar(toRenderable(scene, solved.points)).length === 0)
 
-console.log('\n【动点一：E 在棱 AB 上】')
+console.log('\n【三个面内动点：各自只在自己那个面里】')
 {
-  const at = (t: number) => {
-    const def = scene.points.find((p) => p.name === 'E')
-    if (def?.kind !== 'onSegment') throw new Error('E 不是线段动点')
-    def.t = t
-    return reevaluate(scene.points, solved.points)
-  }
-  const mid = at(0.5)
-  ok('t=0.5 时 E 落在 AB 中点', near(d3(mid['E'], mid['A']), 1) && near(d3(mid['E'], mid['B']), 1))
-  ok('t=0 时 E 回到 A', near(d3(at(0)['E'], at(0)['A']), 0))
-  ok('t=1 时 E 到达 B', near(d3(at(1)['E'], at(1)['B']), 0))
-  const q = at(0.25)
-  ok('AE 始终加上 EB 等于 2', near(d3(q['E'], q['A']) + d3(q['E'], q['B']), 2))
-  ok('E 移动不影响 F', near(d3(q['F'], mid['F']), 0))
-  ok('E 移动不影响棱长', near(d3(q['P'], q['A']), 2))
-}
-
-console.log('\n【动点二：F 在三角形面 PAB 内】')
-{
-  const at = (u: number, v: number) => {
-    const def = scene.points.find((p) => p.name === 'F')
-    if (def?.kind !== 'inFace') throw new Error('F 不是面内动点')
+  const at = (name: string, u: number, v: number) => {
+    const def = scene.points.find((p) => p.name === name)
+    if (def?.kind !== 'inFace') throw new Error(`${name} 不是面内动点`)
     def.u = u
     def.v = v
     return reevaluate(scene.points, solved.points)
   }
-  const center = at(1 / 3, 1 / 3)
-  // 三角形的重心到三个顶点等距
-  ok(
-    'u=v=1/3（重心）时到三个顶点等距',
-    near(d3(center['F'], center['P']), d3(center['F'], center['A']), 1e-6) &&
-      near(d3(center['F'], center['A']), d3(center['F'], center['B']), 1e-6),
-  )
-  ok('u=v=0 时 F 回到 P', near(d3(at(0, 0)['F'], at(0, 0)['P']), 0))
-  ok('u=1,v=0 时 F 到 A', near(d3(at(1, 0)['F'], at(1, 0)['A']), 0))
-
-  // 三角形面用的是重心坐标：u+v 不能超过 1，超了要停在边上
-  const clamped = at(0.8, 0.8)
-  ok('u+v 超过 1 时被拉回边上（不会跑出三角形）', (() => {
-    // 面上的点到三个顶点的距离满足：落在三角形内时，面积和等于整个三角形
-    const P0 = clamped['P']
-    const A0 = clamped['A']
-    const B0 = clamped['B']
-    const F0 = clamped['F']
-    const area = (x: Vec3, y: Vec3, z: Vec3) =>
-      Math.hypot(
-        (y[1] - x[1]) * (z[2] - x[2]) - (y[2] - x[2]) * (z[1] - x[1]),
-        (y[2] - x[2]) * (z[0] - x[0]) - (y[0] - x[0]) * (z[2] - x[2]),
-        (y[0] - x[0]) * (z[1] - x[1]) - (y[1] - x[1]) * (z[0] - x[0]),
-      ) / 2
-    const total = area(P0, A0, B0)
-    const parts = area(F0, A0, B0) + area(P0, F0, B0) + area(P0, A0, F0)
-    return Math.abs(parts - total) < 1e-6
-  })())
-
-  // F 必须始终待在 PAB 所在的平面里
-  const samples = [at(0.2, 0.1), at(0.1, 0.6), at(0.5, 0.25)]
-  const planeOf = (p: Record<string, Vec3>) => {
-    const n = (() => {
-      const u = [p['A'][0] - p['P'][0], p['A'][1] - p['P'][1], p['A'][2] - p['P'][2]]
-      const w = [p['B'][0] - p['P'][0], p['B'][1] - p['P'][1], p['B'][2] - p['P'][2]]
-      return [u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0]]
-    })()
-    return (x: Vec3) => (x[0] - p['P'][0]) * n[0] + (x[1] - p['P'][1]) * n[1] + (x[2] - p['P'][2]) * n[2]
+  /** 点到某个面的距离（面由三个点定） */
+  const distToPlane = (x: Vec3, a: Vec3, b: Vec3, c: Vec3) => {
+    const n = cross(sub(a, b), sub(a, c))
+    const l = Math.hypot(...n)
+    const w = sub(a, x)
+    return Math.abs((w[0] * n[0] + w[1] * n[1] + w[2] * n[2]) / l)
   }
-  ok('无论怎么移，F 都待在这个面所在的平面内', samples.every((s) => Math.abs(planeOf(s)(s['F'])) < 1e-9))
-  ok('F 移动不影响 E', near(d3(samples[2]['E'], center['E']), 0))
+
+  const p = at('E', 0.5, 0.2)
+  ok('E 落在面 PAB 内', distToPlane(p['E'], p['P'], p['A'], p['B']) < 1e-9)
+  ok('F 落在面 PBC 内', distToPlane(p['F'], p['P'], p['B'], p['C']) < 1e-9)
+  ok('M 落在面 PCA 内', distToPlane(p['M'], p['P'], p['C'], p['A']) < 1e-9)
+
+  // 三个动点互相独立：动 E 不该带动 F 与 M
+  const q = at('E', 0.9, 0.05)
+  ok('动 E 不影响 F', near(d3(q['F'], p['F']), 0))
+  ok('动 E 不影响 M', near(d3(q['M'], p['M']), 0))
+  const r = at('F', 0.1, 0.8)
+  ok('动 F 不影响 E', near(d3(r['E'], q['E']), 0))
+  ok('动 F 不影响 M', near(d3(r['M'], q['M']), 0))
+  const s = at('M', 0.7, 0.25)
+  ok('动 M 不影响 E 与 F', near(d3(s['E'], r['E']), 0) && near(d3(s['F'], r['F']), 0))
 }
 
-console.log('\n【中位线 MN：两层依赖，与 P、A、B 联动】')
+console.log('\n【点驱动面：三个动点张成的那个面】')
 {
-  const at = (u: number, v: number) => {
-    const def = scene.points.find((p) => p.name === 'F')
-    if (def?.kind !== 'inFace') throw new Error('F 不是面内动点')
-    def.u = u
-    def.v = v
+  const at = (vals: Partial<Record<'E' | 'F' | 'M', [number, number]>>) => {
+    for (const [name, uv] of Object.entries(vals)) {
+      const def = scene.points.find((x) => x.name === name)
+      if (def?.kind !== 'inFace') throw new Error(`${name} 不是面内动点`)
+      def.u = uv[0]
+      def.v = uv[1]
+    }
     return reevaluate(scene.points, solved.points)
   }
-  const p = at(0.3, 0.3)
-  ok('M 是 PA 的中点', near(d3(p['M'], p['P']), d3(p['M'], p['A']), 1e-9))
-  ok('N 是 PB 的中点', near(d3(p['N'], p['P']), d3(p['N'], p['B']), 1e-9))
-  // 中位线定理：MN 平行于 AB，长度是 AB 的一半
-  const mn = [p['N'][0] - p['M'][0], p['N'][1] - p['M'][1], p['N'][2] - p['M'][2]]
-  const ab = [p['B'][0] - p['A'][0], p['B'][1] - p['A'][1], p['B'][2] - p['A'][2]]
-  const cross = [mn[1] * ab[2] - mn[2] * ab[1], mn[2] * ab[0] - mn[0] * ab[2], mn[0] * ab[1] - mn[1] * ab[0]]
-  ok('MN ∥ AB', Math.hypot(...cross) < 1e-9)
-  ok('MN 的长度是 AB 的一半', near(Math.hypot(...mn), Math.hypot(...ab) / 2, 1e-9), `${Math.hypot(...mn).toFixed(4)}`)
+  /** 三个点张成的平面：算出单位法向量，法向量变了就是面变了 */
+  const normalOf = (p: Record<string, Vec3>) => {
+    const n = cross(sub(p['E'], p['F']), sub(p['E'], p['M']))
+    const l = Math.hypot(...n)
+    return n.map((x) => x / l) as Vec3
+  }
+  const shifted = (a: Vec3 | undefined, b: Vec3 | undefined) => {
+    if (!a || !b) return 0
+    return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2])
+  }
+
+  const base = at({ E: [0.4, 0.3], F: [0.4, 0.3], M: [0.4, 0.3] })
+  const n0 = normalOf(base)
+  ok('三个点不共线（面是真的存在的）', Math.hypot(...cross(sub(base['E'], base['F']), sub(base['E'], base['M']))) > 1e-6)
+
+  // 每次只动一个点，另外两个写回原值 —— at() 会累积上次设的参数，不写清就分不出是谁的影响
+  const keep = { E: [0.4, 0.3] as [number, number], F: [0.4, 0.3] as [number, number], M: [0.4, 0.3] as [number, number] }
+  const onlyE = at({ ...keep, E: [0.9, 0.05] })
+  const onlyF = at({ ...keep, F: [0.85, 0.1] })
+  const onlyM = at({ ...keep, M: [0.15, 0.8] })
+
+  ok('动 E 之后这个面的朝向变了', shifted(n0, normalOf(onlyE)) > 1e-3, `法向量变化 ${shifted(n0, normalOf(onlyE)).toFixed(4)}`)
+  ok('动 F 之后面的朝向也变了', shifted(n0, normalOf(onlyF)) > 1e-3, `法向量变化 ${shifted(n0, normalOf(onlyF)).toFixed(4)}`)
+  ok('动 M 之后面的朝向也变了', shifted(n0, normalOf(onlyM)) > 1e-3, `法向量变化 ${shifted(n0, normalOf(onlyM)).toFixed(4)}`)
+
+  // 只动一个点时，另外两个必须原地不动 —— 这才是「三个动点互相独立」
+  ok('只动 E 时 F、M 没动', near(d3(onlyE['F'], base['F']), 0) && near(d3(onlyE['M'], base['M']), 0))
+  ok('只动 F 时 E、M 没动', near(d3(onlyF['E'], base['E']), 0) && near(d3(onlyF['M'], base['M']), 0))
+  ok('只动 M 时 E、F 没动', near(d3(onlyM['E'], base['E']), 0) && near(d3(onlyM['F'], base['F']), 0))
+
+  // 三个点张成的面永远是一个真正的平面（三点定面，不会扭）
+  const render = toRenderable(scene, base)
+  const efm = render.faces.find((f) => f.key === faceKey(['E', 'F', 'M']))
+  ok('渲染结构里能找到 EFM 这个面', !!efm)
+  ok('EFM 这个面带着顶点名（渲染层要靠它知道该跟谁重算）', JSON.stringify(efm?.names) === JSON.stringify(['E', 'F', 'M']))
+  ok('三个点的面不可能扭，共面检查通过', checkFacesPlanar({ ...render, faces: efm ? [efm] : [] }).length === 0)
 }
 
-console.log('\n【解题过程：辅助点、高亮与角度】')
+console.log('\n【解题过程】')
 {
   const sol = parseSolution(DEMO_SOLUTION, scene)
   ok('四步', sol.steps.length === 4, `实际 ${sol.steps.length}`)
-
+  ok('第四步高亮了 EFM 这个面', sol.steps[3].uses.faces.some((f) => faceKey(f) === faceKey(['E', 'F', 'M'])))
   const merged = mergeSolution(scene, sol)
-  ok('最后一步多画出一个点（垂足 O）', merged.points.length === scene.points.length + 1)
-  const O = merged.points.find((p) => p.name === 'O')
-  ok('O 是垂足类型（不许凭空插自由点）', O?.kind === 'perpFoot')
-
-  const reSolved = solve(merged.points, merged.constraints)
-  ok('加上辅助线后依然解得出', reSolved.ok, `最大残差 ${reSolved.maxError.toExponential(2)}`)
-
-  // 垂足的定义：OP 要垂直于底面 ABC
-  const pp = reSolved.points
-  const v = (a: Vec3, b: Vec3): Vec3 => [b[0] - a[0], b[1] - a[1], b[2] - a[2]]
-  const dot = (a: Vec3, b: Vec3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
-  const po = v(pp['O'], pp['P'])
-  ok('PO ⊥ AB', near(dot(po, v(pp['A'], pp['B'])), 0, 1e-9))
-  ok('PO ⊥ AC', near(dot(po, v(pp['A'], pp['C'])), 0, 1e-9))
-  // 正四面体的高：OP = √(4 - 4/3) = √(8/3)
-  ok('高 PO 等于 √(8/3)', near(Math.hypot(...po), Math.sqrt(8 / 3), 1e-6), Math.hypot(...po).toFixed(6))
-  // O 到三个顶点等距（底面中心）
-  ok(
-    'O 到底面三个顶点等距',
-    near(d3(pp['O'], pp['A']), d3(pp['O'], pp['B']), 1e-6) && near(d3(pp['O'], pp['B']), d3(pp['O'], pp['C']), 1e-6),
-  )
+  ok('这几步不产生新点', merged.points.length === scene.points.length)
+  const again = solve(merged.points, merged.constraints)
+  ok('合并后依然解得出', again.ok, `最大残差 ${again.maxError.toExponential(2)}`)
 }
 
-console.log('\n【元素名解析：点、棱、面都要认得】')
+console.log('\n【元素名解析】')
 {
   const known = new Set(scene.points.map((p) => p.name))
   ok('单个点', parseElementName('E', known, scene.faces)?.point === 'E')

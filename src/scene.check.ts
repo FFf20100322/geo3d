@@ -87,7 +87,11 @@ throws('派生点引用了还没定义的点', () => parseScene({ ...raw, points
 throws('一条约束都没有', () => parseScene({ ...raw, constraints: [] }), '一条约束都没有')
 
 console.log('\n【扭掉的面要能被发现】')
-const face = (pts: Vec3[]): Renderable => ({ vertices: [], edges: [], faces: [{ key: 'k', pts, color: 1 }] })
+const face = (pts: Vec3[]): Renderable => ({
+  vertices: [],
+  edges: [],
+  faces: [{ key: 'k', pts, names: pts.map((_, i) => `p${i}`), color: 1 }],
+})
 ok('真的共面时不误报', checkFacesPlanar(face([[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0]])).length === 0)
 ok(
   '四点不共面时被揪出来',

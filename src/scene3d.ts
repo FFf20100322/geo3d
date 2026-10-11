@@ -78,7 +78,7 @@ function demoScene(): Renderable {
   return {
     vertices: Object.entries(VERTICES).map(([name, at]) => ({ name, at, aux: false, moving: false })),
     edges: EDGES.map(([a, b]) => ({ key: edgeKey(a, b), a: v(a), b: v(b), aux: false })),
-    faces: FACES.map((f) => ({ key: f.pts.join(''), pts: f.pts.map(v), color: f.color })),
+    faces: FACES.map((f) => ({ key: f.pts.join(''), pts: f.pts.map(v), names: [...f.pts], color: f.color })),
   }
 }
 
@@ -125,7 +125,7 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
   let vertexObjects = new Map<string, CSS2DObject>()
   let auxEdges = new Set<string>()
   let auxPoints = new Set<string>()
-  const faceObjects = new Map<string, { mesh: THREE.Mesh; color: number }>()
+  const faceObjects = new Map<string, { mesh: THREE.Mesh; color: number; pts: string[] }>()
   /** 被用户手动关掉的面。换图时清空，所以每次换图都是全显示。 */
   const hiddenFaces = new Set<string>()
 
@@ -134,6 +134,27 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
     for (const [key, entry] of faceObjects) entry.mesh.visible = !hiddenFaces.has(key)
   }
   const edgeEnds = new Map<string, [string, string]>()
+  /**
+   * 把一个多边形面写成三角扇。顶点是现算的，所以面能跟着动点走。
+   * 顶点数变了就重建整个几何体，没变就就地改坐标（拖动时每帧都会走到这里）。
+   */
+  function writeFaceGeometry(mesh: THREE.Mesh, pts: Vec3[]) {
+    if (pts.length < 3) return
+    const verts: number[] = []
+    for (let i = 1; i < pts.length - 1; i++) {
+      for (const p of [pts[0], pts[i], pts[i + 1]]) verts.push(p[0], p[1], p[2])
+    }
+    const geo = mesh.geometry
+    const attr = geo.getAttribute('position') as THREE.BufferAttribute | undefined
+    if (!attr || attr.count !== verts.length / 3) {
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3))
+    } else {
+      for (let i = 0; i < verts.length / 3; i++) attr.setXYZ(i, verts[i * 3], verts[i * 3 + 1], verts[i * 3 + 2])
+      attr.needsUpdate = true
+    }
+    geo.computeBoundingSphere()
+  }
+
   let positions: Record<string, Vec3> = {}
 
   function setScene(r: Renderable) {
@@ -152,14 +173,8 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
     // 半透明面：每个共面一个颜色
     for (const f of r.faces) {
       if (f.pts.length < 3) continue
-      const verts: number[] = []
-      for (let i = 1; i < f.pts.length - 1; i++) {
-        for (const k of [f.pts[0], f.pts[i], f.pts[i + 1]]) verts.push(k[0], k[1], k[2])
-      }
-      const geo = new THREE.BufferGeometry()
-      geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3))
       const mesh = new THREE.Mesh(
-        geo,
+        new THREE.BufferGeometry(),
         new THREE.MeshBasicMaterial({
           color: f.color,
           transparent: true,
@@ -168,9 +183,10 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
           depthWrite: false,
         }),
       )
+      writeFaceGeometry(mesh, f.pts)
       group.add(mesh)
       mesh.userData.faceKey = f.key // 点面切换显隐时要靠它认回是哪个面
-      faceObjects.set(f.key, { mesh, color: f.color })
+      faceObjects.set(f.key, { mesh, color: f.color, pts: f.names })
     }
     applyFaceVisibility()
 
@@ -225,6 +241,18 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
       attr.setXYZ(1, b[0], b[1], b[2])
       attr.needsUpdate = true
       line.geometry.computeBoundingSphere()
+    }
+
+    // 面也要跟着动。一个面由它那几个顶点决定，所以只要顶点里有被挪动的，就重算它。
+    //
+    // 注意这里只会因为**动点**而触发：setPositions 只由拖动路径调用，传进来的就是动点
+    // 与它们的派生点，普通顶点永远不在其中。所以静态的面（题面本来就有的那些）
+    // 一次也不会重算，只有像「三个动点张成的那个面」才会随拖动实时更新。
+    for (const entry of faceObjects.values()) {
+      if (!entry.pts.some((n) => dirty.has(n))) continue
+      const pts = entry.pts.map((n) => positions[n])
+      if (pts.some((p) => !p)) continue
+      writeFaceGeometry(entry.mesh, pts)
     }
   }
 

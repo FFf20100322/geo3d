@@ -217,6 +217,8 @@ export interface RFace {
   /** 面名（顶点按顺序拼起来），用来支持「高亮某个面」 */
   key: string
   pts: Vec3[]
+  /** 顶点名。渲染层靠它判断这个面要不要跟着某次拖动重算（由动点张成的面必须实时跟着动） */
+  names: string[]
   color: number
 }
 
@@ -258,7 +260,14 @@ export function toRenderable(scene: Scene, solved: Record<string, Vec3>, base?: 
       b: at(b),
       aux: base ? !baseEdges.has(edgeKey(a, b)) : false,
     })),
-    faces: scene.faces.map((ring, i) => ({ key: faceKey(ring), pts: ring.map(at), color: PALETTE[i % PALETTE.length] })),
+    // names 是顶点名，渲染层要靠它判断「这个面该不该跟着这次拖动重算」——
+    // 由动点张成的面必须能实时跟着动，只有坐标没有名字就认不出是谁在动
+    faces: scene.faces.map((ring, i) => ({
+      key: faceKey(ring),
+      pts: ring.map(at),
+      names: [...ring],
+      color: PALETTE[i % PALETTE.length],
+    })),
   }
 }
 
