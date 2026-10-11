@@ -123,6 +123,8 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
 
   let edgeObjects = new Map<string, THREE.LineSegments>()
   let vertexObjects = new Map<string, CSS2DObject>()
+  /** 点名对应的那个 DOM，用来处理标注互相遮挡 */
+  const labelEls = new Map<string, HTMLElement>()
   let auxEdges = new Set<string>()
   let auxPoints = new Set<string>()
   const faceObjects = new Map<string, { mesh: THREE.Mesh; color: number; pts: string[] }>()
@@ -208,6 +210,7 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
       obj.position.copy(v3(v.at))
       group.add(obj)
       vertexObjects.set(v.name, obj)
+      labelEls.set(v.name, el)
     }
 
     // 从棱的 key 反推两端点名，拖动动点时要按名字找连着的棱
@@ -594,9 +597,42 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
   // 拖动中不要弹出长按菜单或选中文字
   host.addEventListener('contextmenu', (e) => e.preventDefault())
 
+  /**
+   * 标注互相压住时，**只留离屏幕最近的那一个**。
+   *
+   * 为什么要有这一条：点标注是 DOM 覆盖层，永远压在最上面，所以两个点投影到屏幕同一处时
+   * 它们会叠在一起、两个字糊成一团，谁也读不出来。课本上遇到这种情况也是把后面的挡住。
+   *
+   * 做法上刻意不去量真实尺寸（那会触发浏览器重排，每帧都做不起）：
+   * 标注都是一两个字、字号固定，用一个固定的估算框就够用了。
+   */
+  function resolveLabelOverlap(): void {
+    const items: { el: HTMLElement; x: number; y: number; d: number }[] = []
+    for (const [name, obj] of vertexObjects) {
+      const el = labelEls.get(name)
+      if (!el) continue
+      if (el.style.display === 'none') continue
+      if (!el.textContent) continue
+      const p = obj.position
+      const s = screenOf([p.x, p.y, p.z])
+      items.push({ el, x: s.x, y: s.y, d: camera.position.distanceTo(obj.position) })
+    }
+    items.sort((a, b) => a.d - b.d) // 近的优先占位
+
+    const W = 30
+    const H = 22
+    const taken: { x: number; y: number }[] = []
+    for (const it of items) {
+      const clash = taken.some((t) => Math.abs(t.x - it.x) < W && Math.abs(t.y - it.y) < H)
+      it.el.style.visibility = clash ? 'hidden' : 'visible'
+      if (!clash) taken.push({ x: it.x, y: it.y })
+    }
+  }
+
   const loop = () => {
     controls.update()
     renderer.render(scene, camera)
+    resolveLabelOverlap()
     labelRenderer.render(scene, camera)
   }
 
