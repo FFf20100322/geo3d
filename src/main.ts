@@ -1765,7 +1765,18 @@ function viewSolution(sol: Solution): Solution {
   return steps.length ? { ...sol, steps } : sol
 }
 
-/** 依据当前解答里出现的 q / via，重建那一排切换按钮 */
+/**
+ * 问 / 解法：两组各自收成一个贴左侧的小标签，点开才向右铺开。
+ *
+ * 规则（用户定的）：
+ * - 两组**各自**收成左侧一个小标签，标签上写着当前选中项；
+ * - 点标签展开，选项向右铺开，**换行也不挤**；
+ * - **同时只允许开一组** —— 开着一组时最上面那条工具条暂时藏起来，
+ *   不然三排按钮挤在一起谁也看不清；
+ * - **选完自动收回去**。
+ */
+let openGroup: '' | 'q' | 'via' = ''
+
 function renderQSel(): void {
   const box = $('qsel')
   box.innerHTML = ''
@@ -1774,27 +1785,75 @@ function renderQSel(): void {
   const vias = sol ? [...new Set(sol.steps.map((s) => s.via).filter((x): x is string => !!x))] : []
   if (!qs.length && !vias.length) {
     box.style.display = 'none'
+    openGroup = ''
     return
   }
   box.style.display = 'flex'
-  const add = (text: string, on: boolean, run: () => void) => {
-    const b = document.createElement('button')
-    b.textContent = text
-    b.className = on ? 'on' : ''
-    b.onclick = run
-    box.appendChild(b)
+
+  /**
+   * 建一组。`title` 是收起时标签上写的字，`options` 是展开后的选项。
+   * 选完自动收起：所以每个选项点完都先把 openGroup 清掉再重画。
+   */
+  const group = (
+    key: 'q' | 'via',
+    title: string,
+    options: { text: string; on: boolean; pick: () => void }[],
+  ) => {
+    const g = document.createElement('div')
+    g.className = 'qgroup'
+
+    const head = document.createElement('button')
+    head.className = `qhead${openGroup === key ? ' on' : ''}`
+    head.textContent = `${openGroup === key ? '▾' : '▸'} ${title}`
+    head.onclick = () => {
+      openGroup = openGroup === key ? '' : key
+      renderQSel()
+      syncViewInset()
+    }
+    g.appendChild(head)
+
+    if (openGroup === key) {
+      const opts = document.createElement('div')
+      opts.className = 'qopts'
+      for (const o of options) {
+        const b = document.createElement('button')
+        b.textContent = o.text
+        b.className = o.on ? 'on' : ''
+        b.onclick = () => {
+          o.pick()
+          openGroup = '' // 选完自动收回去
+          afterPick()
+        }
+        opts.appendChild(b)
+      }
+      g.appendChild(opts)
+    }
+    box.appendChild(g)
   }
+
   if (qs.length) {
-    add('全部问', !qPick, () => { qPick = ''; afterPick() })
-    for (const q of qs) add(q === '0' ? '通识' : `第(${q})问`, qPick === q, () => { qPick = q; afterPick() })
+    const cur = qPick ? (qPick === '0' ? '通识' : `第(${qPick})问`) : '全部问'
+    group('q', `问：${cur}`, [
+      { text: '全部问', on: !qPick, pick: () => { qPick = '' } },
+      ...qs.map((q) => ({
+        text: q === '0' ? '通识' : `第(${q})问`,
+        on: qPick === q,
+        pick: () => { qPick = q },
+      })),
+    ])
   }
   if (vias.length) {
-    const sep = document.createElement('span')
-    sep.className = 'sep'
-    box.appendChild(sep)
-    add('不分方法', !viaPick, () => { viaPick = ''; afterPick() })
-    for (const v of vias) add(v, viaPick === v, () => { viaPick = v; afterPick() })
+    group('via', `解法：${viaPick || '不分方法'}`, [
+      { text: '不分方法', on: !viaPick, pick: () => { viaPick = '' } },
+      ...vias.map((v) => ({ text: v, on: viaPick === v, pick: () => { viaPick = v } })),
+    ])
   }
+
+  // 开着一组时把最上面那条工具条藏起来；收起来再显示。
+  // 藏的是「面：全开 / 调节 / 标注 / ° / 完成」那一行 —— 展开时本来也点不到它，
+  // 留着只会和选项挤在一起。
+  const tools = $('scene-tools')
+  tools.style.visibility = openGroup ? 'hidden' : 'visible'
 }
 
 /** 换了一问或一种解法：步骤从头播一遍，标注也跟着重算 */
@@ -1802,6 +1861,7 @@ function afterPick(): void {
   stepProgress = -1
   stepIndex = -1
   stopPlay()
+  renderQSel()
   renderQSel()
   refreshAnnotations()
   applyStep()
