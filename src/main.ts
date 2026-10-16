@@ -86,6 +86,8 @@ function show(v: ViewName | '3d') {
   // 「载入已保存的题目」那一页每次进去都重画一遍 ——
   // 以后导入的题目是随时可能增加的，画一次就定死在页面上会漏掉新来的。
   if (v === 'saved') renderSavedList()
+  // 换一道题就重建「问 / 解法」那一排按钮：不同题的问法与解法都不一样
+  if (v === '3d') renderQSel()
   syncSceneChrome()
 }
 
@@ -1687,7 +1689,8 @@ const picked = { points: new Set<string>(), edges: new Set<string>(), faces: new
 /** 当前该高亮哪些元素（步骤 ∪ 手动点选）。都没有就返回 null 表示不强调任何东西。 */
 function highlightSets(): Highlight | null {
   const sol = currentSolution
-  const step = sol && stepIndex >= 0 ? sol.steps[stepIndex] : null
+  const view = sol ? viewSolution(sol) : null
+  const step = view && stepIndex >= 0 ? view.steps[stepIndex] : null
   const points = new Set(picked.points)
   const edges = new Set(picked.edges)
   const faces = new Set(picked.faces)
@@ -1721,10 +1724,83 @@ const MS_PER_SLIDER_TICK = 60
  */
 let stepProgress = -1
 
+// ---- 问与解法：一次只看一种 ----
+/**
+ * 当前选中的「哪一问」与「哪种解法」。空串表示不筛。
+ *
+ * 用户的要求是：**三种解法分开演算、不能同时出现，用按钮切换**。
+ * 所以这里不把几套解法叠在一起画，而是按选择只播放对应那一组步骤 ——
+ * 切换等于换一套步骤重放，而不是在图上多画一层。
+ */
+let qPick = ''
+let viaPick = ''
+
+/** 按当前选择过滤出该播放的步骤。没选就原样返回。 */
+function viewSolution(sol: Solution): Solution {
+  if (!qPick && !viaPick) return sol
+  const steps = sol.steps.filter((s) => {
+    // 没标 q 的是通识步骤（比如「先把正方体摆出来」），任何一问都要它
+    if (qPick && s.q && s.q !== qPick) return false
+    if (viaPick) {
+      // 选了方法：只留这一种方法的步骤。没标 via 的步骤只在没选方法时出现。
+      if (s.via !== viaPick) return false
+    } else if (s.via) {
+      // 没选方法时，同属一问的多种解法只能留一种，否则步骤会重复
+      if (s.q === qPick || !qPick) return false
+    }
+    return true
+  })
+  return steps.length ? { ...sol, steps } : sol
+}
+
+/** 依据当前解答里出现的 q / via，重建那一排切换按钮 */
+function renderQSel(): void {
+  const box = $('qsel')
+  box.innerHTML = ''
+  const sol = currentSolution
+  const qs = sol ? [...new Set(sol.steps.map((s) => s.q).filter((x): x is string => !!x))].sort() : []
+  const vias = sol ? [...new Set(sol.steps.map((s) => s.via).filter((x): x is string => !!x))] : []
+  if (!qs.length && !vias.length) {
+    box.style.display = 'none'
+    return
+  }
+  box.style.display = 'flex'
+  const add = (text: string, on: boolean, run: () => void) => {
+    const b = document.createElement('button')
+    b.textContent = text
+    b.className = on ? 'on' : ''
+    b.onclick = run
+    box.appendChild(b)
+  }
+  if (qs.length) {
+    add('全部问', !qPick, () => { qPick = ''; afterPick() })
+    for (const q of qs) add(q === '0' ? '通识' : `第(${q})问`, qPick === q, () => { qPick = q; afterPick() })
+  }
+  if (vias.length) {
+    const sep = document.createElement('span')
+    sep.className = 'sep'
+    box.appendChild(sep)
+    add('不分方法', !viaPick, () => { viaPick = ''; afterPick() })
+    for (const v of vias) add(v, viaPick === v, () => { viaPick = v; afterPick() })
+  }
+}
+
+/** 换了一问或一种解法：步骤从头播一遍，标注也跟着重算 */
+function afterPick(): void {
+  stepProgress = -1
+  stepIndex = -1
+  stopPlay()
+  renderQSel()
+  refreshAnnotations()
+  applyStep()
+  syncViewInset()
+}
+
 function applyStep(): void {
   const base = currentScene
-  const sol = currentSolution
-  if (!base || !sol || !scene) return
+  const sol0 = currentSolution
+  if (!base || !sol0 || !scene) return
+  const sol = viewSolution(sol0)
   const label = $('pl-label')
   const text = $('pl-text')
   const range = $<HTMLInputElement>('pl-range')
@@ -1780,7 +1856,8 @@ function setStep(s: number): void {
   if (!sol) return
   // 点「上一步/下一步」时让这一步**画完**。
   // 如果停在这一步的起点（frac = 0），那就只换了文字、线一根没出现 —— 看着像没反应。
-  stepProgress = s < 0 ? -1 : Math.min(sol.steps.length * SLIDER_SUB - 1, s * SLIDER_SUB + SLIDER_SUB - 1)
+  const total = viewSolution(sol).steps.length
+  stepProgress = s < 0 ? -1 : Math.min(total * SLIDER_SUB - 1, s * SLIDER_SUB + SLIDER_SUB - 1)
   applyStep()
   // 切步骤时底部那两块文字会变高变矮，所以要让位重算一次
   syncViewInset()
@@ -1826,7 +1903,7 @@ $('pl-play').onclick = () => {
   }
   playing = true
   $('pl-play').textContent = '⏸ 暂停'
-  const totalTicks = sol.steps.length * SLIDER_SUB
+  const totalTicks = viewSolution(sol).steps.length * SLIDER_SUB
   if (stepProgress < 0 || stepProgress >= totalTicks) stepProgress = 0
   // **像视频那样连续播放**：按真实流逝的时间推进，中途不停顿。
   // 一开始我在每个步骤边界停了 800 毫秒给人读文字，用户看了说要像视频 ——
@@ -1838,7 +1915,9 @@ $('pl-play').onclick = () => {
     const elapsed = performance.now() - startedAt
     const next = from + Math.floor(elapsed / MS_PER_SLIDER_TICK)
     if (next >= totalTicks) {
-      stepProgress = totalTicks
+      // 播完回到「全部」——那时候辅助线本来就该全都在，
+      // 停在最后一个步骤上反而像是「只画到这儿」。
+      stepProgress = -1
       applyStep()
       stopPlay()
       return

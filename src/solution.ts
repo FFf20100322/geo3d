@@ -40,6 +40,17 @@ export interface Step {
   addEdges: [string, string][]
   /** 这一步主要用到的已有元素，用来在 3D 里高亮 */
   uses: Uses
+  /**
+   * 这一步属于哪一问（'1'、'2'…；'0' 表示不属于任何一问的通识步骤）。
+   * 不填就是「哪一问都算」—— 只有一问的题什么都不用改。
+   */
+  q?: string
+  /**
+   * 这一步用的哪种解题方法（'向量法' / '坐标系法' / '基底法'）。
+   * 同一问的不同解法就是「q 相同、via 不同」的几组步骤 ——
+   * 用按钮切换时只放对应那一组，所以一次只会看到一种方法。
+   */
+  via?: string
 }
 
 export interface Solution {
@@ -222,7 +233,10 @@ export function parseSolution(raw: unknown, scene: Scene): Solution {
       if (parsed.face) uses.faces.push(parsed.face)
     }
 
-    steps.push({ title, text, why, addPoints, addEdges, uses })
+    // 这两项是可选的：只有「一问多解、要按钮切换」的题才填，其余题不受影响
+    const q = typeof s.q === 'string' || typeof s.q === 'number' ? String(s.q) : undefined
+    const via = typeof s.via === 'string' && s.via.trim() ? readable(s.via) : undefined
+    steps.push({ title, text, why, addPoints, addEdges, uses, q, via })
   }
 
   // 角度描述里引用的点必须在图上真的存在（含前面步骤刚画出来的辅助点）

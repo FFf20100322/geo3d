@@ -91,6 +91,11 @@
       #labels .pt.hl { color: #ffd166; font-size: 19px; }
       #labels .pt.mov { color: #ffb84d; font-size: 18px; }
       #labels .angle-label { color: #6ee7ff; font-size: 13px; font-weight: 600; white-space: nowrap; text-shadow: 0 0 3px #000, 0 0 6px #000, 0 1px 2px #000; }
+      /* 问 / 解法的切换按钮：细一排，放在图形上面那条工具条底下 */
+      #qsel { position: fixed; top: 64px; left: 12px; right: 12px; z-index: 16; display: none; flex-wrap: wrap; gap: 6px; }
+      #qsel button { padding: 5px 10px; font-size: 12.5px; border-radius: 8px; border: 1px solid #2b3442; background: rgba(20,26,34,.9); color: #cbd5e1; }
+      #qsel button.on { background: #2f6fed; border-color: #2f6fed; color: #fff; font-weight: 600; }
+      #qsel .sep { width: 1px; align-self: stretch; background: #2b3442; margin: 0 2px; }
 
       #dyn-panel, #elem-panel { position: fixed; top: 104px; left: 12px; right: 12px; z-index: 16; display: none; flex-direction: column; padding: 10px 12px; border-radius: 10px; background: rgba(20,26,34,.94); border: 1px solid #2b3442; }
       /* 内容自己滚，收起按钮钉在面板底部，不会被滚出去 */
@@ -329,6 +334,8 @@
       </div>
     </div>
     <div id="scene-caption"></div>
+    <!-- 问与解法的切换按钮。只有「一问多解」的题才会出现内容，别的题这里是空的。 -->
+    <div id="qsel"></div>
     <div id="hint">单指拖动旋转 · 双指缩放平移</div>
     <script type="module" src="/src/main.ts"></script>
   </body>
