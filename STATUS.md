@@ -99,10 +99,17 @@ geo / solver / text / scene / history / solution / demo / drag / symbolic / angl
 
 ## 每一轮的收尾动作
 
+**每轮都要做完整套**（用户要求每轮都推送，不攒着）：
+
 1. 同步本文件的进度
 2. `pnpm check` 十三项全绿（不全绿不算完成）
-3. `git commit` 后 `git push`（本地与 GitHub 同时保存）
-4. `pnpm backup` 备份到 `F:\DSH项目备份\高中立体几何`（完整仓库副本 + 历史快照，保留最近 20 份）
+3. 给 `CHANGELOG.md` 加一节；按版本规则走号（加功能走中间位、修错走末尾位、能装到手机上用变 1.x）
+4. 同步三处描述：`README.md`、`功能与特点.md`、GitHub 仓库简介（`gh repo edit --description`）
+5. `git commit` 后 `git push`，并推送版本标签
+6. `pnpm backup` 备份到 `F:\DSH项目备份\高中立体几何`（完整仓库副本 + 历史快照，保留最近 20 份）
+
+**每轮都推而不是攒着**：推送本身就是退路，一轮做完就有一个干净的、可退回的点。
+APK 与桌面版做好后放 GitHub Releases，不放仓库（免得每次克隆都拖着一堆二进制）。
 
 **提交信息要写清四件事**（用户明确要求）：改了什么、为什么这么改、遇到了什么问题、哪些已解决。
 不要写「修了一些问题」这种没信息量的话。
