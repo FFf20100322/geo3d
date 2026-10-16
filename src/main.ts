@@ -603,11 +603,23 @@ function spanBetween(a: string, b: string): number {
  */
 function syncViewInset(): void {
   let top = 0
-  for (const id of ['scene-tools', 'dyn-panel']) {
+  // 上方这些条子谁最低就以谁为准。
+  // qsel 也算在内 —— 它虽然由工具条的位置算出来，但一旦换行变高，
+  // 画布就得跟着再往下让，不然图形会被它压住。
+  for (const id of ['scene-tools', 'dyn-panel', 'qsel']) {
     const el = $(id)
     if (el.style.display === 'none') continue
     const r = el.getBoundingClientRect()
     if (r.height > 0) top = Math.max(top, r.bottom + 10)
+  }
+
+  // 「问 / 解法」那一排要贴在工具条底下。
+  // 写死的 top 会在工具条换行时压上去（真机上见过按钮叠在一起、两排都看不清），
+  // 所以按工具条实际的下边缘来放。
+  const qsel = $('qsel')
+  if (qsel.style.display !== 'none') {
+    const tools = $('scene-tools').getBoundingClientRect()
+    qsel.style.top = `${Math.round(tools.bottom + 6)}px`
   }
 
   // 底部这些条子谁最高就以谁为准
