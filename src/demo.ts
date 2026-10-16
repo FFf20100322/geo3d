@@ -138,6 +138,39 @@ export const DEMO_SOLUTION = {
 }
 
 /**
+ * 【临时测试】曲面立体的渲染。**验完就删，不进仓库**（用户的要求）。
+ *
+ * 一个球、一个圆柱、一个圆锥。它们的共同点是都没法用平面多边形拼出来 ——
+ * 这正是这一轮要补的东西。
+ */
+export const SOLID_TEMP_PROBLEM = `【临时测试】球、圆柱、圆锥各一个，用来看曲面立体的线框画得对不对。`
+export const SOLID_TEMP_SCENE = {
+  points: [
+    { name: 'O', kind: 'free', at: [0, 0, 0] },
+    { name: 'R', kind: 'free', at: [2, 0, 0] },
+    { name: 'P', kind: 'free', at: [-4, -1.5, 0] },
+    { name: 'Q', kind: 'free', at: [-4, 0.5, 0] },
+    { name: 'M', kind: 'free', at: [4, 1.5, 0] },
+    { name: 'N', kind: 'free', at: [4, -0.5, 0] },
+    { name: 'K', kind: 'free', at: [5, -0.5, 0] },
+  ],
+  constraints: [
+    { kind: 'distance', a: 'O', b: 'R', value: 2 },
+    { kind: 'distance', a: 'P', b: 'Q', value: 2 },
+    { kind: 'distance', a: 'M', b: 'N', value: 2 },
+    { kind: 'distance', a: 'N', b: 'K', value: 1 },
+    { kind: 'perpendicular', p: ['P', 'Q'], q: ['N', 'K'] },
+  ],
+  edges: [['O', 'R'], ['P', 'Q'], ['M', 'N'], ['N', 'K']],
+  faces: [],
+  solids: [
+    { kind: 'sphere', center: 'O', through: 'R' },
+    { kind: 'cylinder', a: 'P', b: 'Q', radius: 1 },
+    { kind: 'cone', apex: 'M', center: 'N', rim: 'K' },
+  ],
+}
+
+/**
  * 内置测试题之三：**翻折** —— 平行四边形 ABCD 沿对角线 BC 把 D 折起来。
  *
  * 这是用户点名要的题型：「把一个面翻折成一个立体图形」。

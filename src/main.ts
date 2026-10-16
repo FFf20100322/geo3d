@@ -40,6 +40,8 @@ import {
   FOLD_SCENE,
   FOLD_SOLUTION,
   FULL_SOLUTION,
+  SOLID_TEMP_PROBLEM,
+  SOLID_TEMP_SCENE,
   MOVING_PROBLEM,
   REALFLOW_PROBLEM,
 } from './demo'
@@ -1154,13 +1156,15 @@ $('btn-repick').onclick = () => {
  * - `cube` 棱长 2 的正方体：四边形面、全部 8 种点类型与 8 种约束、四个问、
  *   辅助点是**由解答一步步加出来的**（所以播放器有东西可以揭示）。
  */
-function loadBuiltinDemo(which: 'tetra' | 'cube' | 'fold' = 'tetra'): void {
+function loadBuiltinDemo(which: 'tetra' | 'cube' | 'fold' | 'solidtemp' = 'tetra'): void {
   const [problem, sceneSrc, solutionSrc] =
     which === 'cube'
       ? [FULL_PROBLEM, FULL_SCENE, FULL_SOLUTION]
       : which === 'fold'
         ? [FOLD_PROBLEM, FOLD_SCENE, FOLD_SOLUTION]
-        : [DEMO_PROBLEM, DEMO_SCENE, DEMO_SOLUTION]
+        : which === 'solidtemp'
+          ? [SOLID_TEMP_PROBLEM, SOLID_TEMP_SCENE, { steps: [], answers: [], angles: [], lengths: [] }]
+          : [DEMO_PROBLEM, DEMO_SCENE, DEMO_SOLUTION]
   $<HTMLTextAreaElement>('problem-text').value = problem
   $<HTMLTextAreaElement>('extra').value = ''
   $('points').textContent = ''
@@ -1267,6 +1271,12 @@ function importedItems(): { title: string; desc: string; run: () => void }[] {
       title: '正方体 · 动点 E、F（走真实建模流程）',
       desc: '内置题目：只有文字，图形与解答让模型现场推。两个问都绕不开动点，用来试三种解题法在拖动时的实时更新。要联网。',
       run: () => startRealFlow(MOVING_PROBLEM),
+    },
+    {
+      // 【临时测试】曲面立体的线框。验完连同 demo.ts 里的 SOLID_TEMP_* 一起删掉。
+      title: '【临时测试】球、圆柱、圆锥',
+      desc: '只用来验曲面立体的线框画得对不对，验完会删掉。',
+      run: () => loadBuiltinDemo('solidtemp'),
     },
     {
       title: '翻折：平行四边形沿对角线折起',

@@ -179,8 +179,89 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
 
   let positions: Record<string, Vec3> = {}
 
+  /** 曲面立体的线框（球、椭球、圆柱、圆锥、圆台）。换图时整个重建。 */
+  const solidGroup = new THREE.Group()
+  scene.add(solidGroup)
+
+  /** 线框材质。曲面不像平面那样填色 —— 填了会把里面的点线全挡住。 */
+  const matSolid = new THREE.LineBasicMaterial({ color: 0x8fb4d8, transparent: true, opacity: 0.5 })
+
+  /**
+   * 画一个曲面立体。
+   *
+   * 都用 three 自带的几何体，只是**摆到正确的位置和朝向上**：
+   * 自带几何体都是「贴着坐标轴、以原点为中心」的，所以要么平移、要么转一下。
+   * 椭球麻烦一点：三条半轴一般不在坐标轴上，得按它们**现搭一个基**。
+   */
+  function addSolid(s: NonNullable<Renderable['solids']>[number]): void {
+    const wire = (geo: THREE.BufferGeometry, m: THREE.Matrix4) => {
+      const line = new THREE.LineSegments(new THREE.WireframeGeometry(geo), matSolid)
+      line.applyMatrix4(m)
+      solidGroup.add(line)
+      geo.dispose()
+    }
+    const V = (p: Vec3) => new THREE.Vector3(p[0], p[1], p[2])
+    // 把「沿 y 轴、高 h、以原点为中心」的几何体摆成「从 a 到 b」
+    const placeAlong = (a: Vec3, b: Vec3, rTop: number, rBot: number) => {
+      const va = V(a)
+      const vb = V(b)
+      const axis = new THREE.Vector3().subVectors(vb, va)
+      const h = axis.length()
+      if (h < 1e-9) return
+      const geo = new THREE.CylinderGeometry(rTop, rBot, h, 32, 1, true)
+      // 默认沿 +y；把它转到轴的方向
+      const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), axis.clone().normalize())
+      const mid = new THREE.Vector3().addVectors(va, vb).multiplyScalar(0.5)
+      wire(geo, new THREE.Matrix4().compose(mid, q, new THREE.Vector3(1, 1, 1)))
+    }
+
+    if (s.kind === 'sphere' && s.center && s.radius) {
+      wire(new THREE.SphereGeometry(s.radius, 28, 18), new THREE.Matrix4().makeTranslation(...s.center))
+    } else if (s.kind === 'ellipsoid' && s.center && s.ax && s.ay && s.az) {
+      // 三条半轴现搭一个基。它们一般不互相垂直，所以这里**正交化**一下 ——
+      // 画出来仍然是那个椭球的形状，只是取了一个干净的坐标架。
+      const c = V(s.center)
+      const u = new THREE.Vector3().subVectors(V(s.ax), c)
+      const v = new THREE.Vector3().subVectors(V(s.ay), c)
+      const w = new THREE.Vector3().subVectors(V(s.az), c)
+      const ru = u.length() || 1
+      const rv = v.length() || 1
+      const rw = w.length() || 1
+      // 施密特正交化：u 不动，v 去掉 u 方向的分量，w 去掉 u、v 方向的分量
+      u.normalize()
+      v.addScaledVector(u, -v.dot(u)).normalize()
+      w.addScaledVector(u, -w.dot(u)).addScaledVector(v, -w.dot(v)).normalize()
+      const m = new THREE.Matrix4().makeBasis(u, v, w)
+      m.setPosition(c)
+      m.multiply(new THREE.Matrix4().makeScale(ru, rv, rw))
+      wire(new THREE.SphereGeometry(1, 28, 18), m)
+    } else if (s.kind === 'cylinder' && s.a && s.b && s.radius) {
+      placeAlong(s.a, s.b, s.radius, s.radius)
+    } else if (s.kind === 'frustum' && s.a && s.b && s.radiusA && s.radiusB) {
+      placeAlong(s.a, s.b, s.radiusA, s.radiusB)
+    } else if (s.kind === 'cone' && s.apex && s.center && s.radius) {
+      // 圆锥：顶点在 apex，底面圆心在 center。自带的圆锥底面在 −h/2，所以轴要从
+      // 底面的对称位置算起 —— 直接用 placeAlong 会短一半。
+      const apex = V(s.apex)
+      const base = V(s.center)
+      const h = new THREE.Vector3().subVectors(apex, base).length()
+      if (h < 1e-9) return
+      const geo = new THREE.ConeGeometry(s.radius, h, 32, 1, true)
+      // 底面在 −h/2、顶点在 +h/2，所以中心要落在 apex 与 base 的中点
+      const mid = new THREE.Vector3().addVectors(apex, base).multiplyScalar(0.5)
+      const q = new THREE.Quaternion().setFromUnitVectors(
+        new THREE.Vector3(0, 1, 0),
+        new THREE.Vector3().subVectors(apex, base).normalize(),
+      )
+      wire(geo, new THREE.Matrix4().compose(mid, q, new THREE.Vector3(1, 1, 1)))
+    }
+  }
+
   function setScene(r: Renderable) {
     group.clear()
+    // 注意：solidGroup 挂在 scene 上，group.clear() 清不到它，所以自己清
+    for (const s of [...solidGroup.children]) solidGroup.remove(s)
+    for (const s of r.solids ?? []) addSolid(s)
     labelHost.innerHTML = '' // 换场景时清掉可能残留的标签 DOM
     labelsDirty = true // 换了图要重新排一次标注
     edgeObjects = new Map()
