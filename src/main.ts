@@ -63,6 +63,8 @@ if (scene) {
 
 /** 当前这张照片的缩略图，存历史时要用 */
 let currentThumb: string | undefined
+/** 当前这张照片存档里留下的那一版（比缩略图清楚得多，用来还原原题图片） */
+let currentImage: string | undefined
 /** 当前打开的那条历史记录，用来在原记录上更新而不是新增一条 */
 let currentRecordId: string | undefined
 /** 当前这道题已经建好的场景（不含辅助线）。解题过程要挂在它上面。 */
@@ -753,11 +755,16 @@ function say(text: string, kind: '' | 'ok' | 'err' = '') {
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
 /**
- * 把照片处理成两版：给模型看的大图，和存历史用的小缩略图。
- * 大图缩到长边 2048、JPEG 0.92 —— 模型看到的图本来就会被缩到约 1300，
- * 所以这个上限不会丢掉任何模型能看见的细节，纯粹是省上传流量。
+ * 把照片处理成三版：
+ * - `full` 给模型看的大图，缩到长边 2048、JPEG 0.92 —— 模型看到的图本来就会被缩到约 1300，
+ *   所以这个上限不会丢掉任何模型能看见的细节，纯粹是省上传流量。
+ * - `keep` **存档里留的那一份**，缩到长边 1280、JPEG 0.85。
+ *   用户要求存档「保留所有的东西」，其中就包括原题图片 —— 但手机浏览器的存储有配额，
+ *   原图直接塞进去，十条就把配额撑爆了。1280 这一版在手机屏幕上放大看已经足够清楚，
+ *   打包发给别人看也够用，而体积只有大图的几分之一。
+ * - `thumb` 列表里用的小缩略图。
  */
-async function prepareImage(file: File): Promise<{ full: string; thumb: string }> {
+async function prepareImage(file: File): Promise<{ full: string; keep: string; thumb: string }> {
   const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' })
   const draw = (maxSide: number, quality: number) => {
     const scale = Math.min(1, maxSide / Math.max(bmp.width, bmp.height))
@@ -772,9 +779,10 @@ async function prepareImage(file: File): Promise<{ full: string; thumb: string }
     return cv.toDataURL('image/jpeg', quality)
   }
   const full = draw(2048, 0.92)
+  const keep = draw(1280, 0.85)
   const thumb = draw(360, 0.6)
   bmp.close()
-  return { full, thumb }
+  return { full, keep, thumb }
 }
 
 function fillText(result: OcrResult) {
@@ -818,6 +826,7 @@ function autoSave(sceneData?: Scene, solution?: Solution): void {
       problemText,
       extra: $<HTMLTextAreaElement>('extra').value,
       thumbnail: currentThumb,
+      image: currentImage,
       scene: sceneData,
       solution,
     })
@@ -987,8 +996,9 @@ async function handleFile(file: File) {
 
   try {
     say('正在处理照片…')
-    const { full, thumb } = await prepareImage(file)
+    const { full, keep, thumb } = await prepareImage(file)
     currentThumb = thumb
+    currentImage = keep
     const preview = $('photo-preview')
     preview.innerHTML = ''
     const img = document.createElement('img')
@@ -1060,40 +1070,30 @@ $('btn-repick').onclick = () => {
  * 载入内置示例题。
  * 走的是跟正常流程完全一样的那条路（解析 → 求解 → 合并辅助线 → 重新求解），
  * 所以它既能给你测界面，也能当作回归自检的种子（demo.check.ts 跑的就是这同一份数据）。
+ * （下面 loadBuiltinDemo 就是它，这里留个索引免得找不到。）
  */
-/**
- * 「载入已保存的题目」列表。
- *
- * 内置示例是一个**能点选的列表**，而不是一个笼统的按钮 ——
- * 以后从别的手机或电脑导入的题目（`.g3d`）也进这个列表，所以它一开始就得是列表的形状，
- * 免得等导入做出来再改一遍版式。
- */
-type SavedItem = { title: string; desc: string; run: () => void }
-
-const savedItems: SavedItem[] = [
-  {
-    title: '正四棱锥 P-ABCD（走真实建模流程）',
-    desc: '只给题目文字，让模型真的建一遍。会走完整链路，要联网、要等几十秒。',
-    run: () => startRealFlow(),
-  },
-  {
-    title: '正四面体：三个面上的动点张成一个新平面',
-    desc: '不耗接口、秒开的示例。用来看动点拖动与「点驱动面」，也是回归自检的种子。',
-    run: () => loadBuiltinDemo(),
-  },
-]
 
 function renderSavedList(): void {
-  const box = $('demo-list')
+  const records = history.list()
+  renderPickList('saved-history', records.map(historyItem), '还没有历史记录。拍一道题、或直接打字建一道，就会出现在这里。')
+  renderPickList('saved-imported', importedItems(), '还没有导入的题目。')
+}
+
+/**
+ * 列表渲染。两类共用一套 —— 历史记录与导入的题目在界面上就该长得一样，
+ * 差别只在「从哪来」，不该让用户学两种看法。
+ */
+function renderPickList(boxId: string, items: { title: string; desc: string; run: () => void }[], empty: string): void {
+  const box = $(boxId)
   box.innerHTML = ''
-  if (!savedItems.length) {
+  if (!items.length) {
     const p = document.createElement('p')
     p.className = 'pick-empty'
-    p.textContent = '还没有可载入的题目。'
+    p.textContent = empty
     box.appendChild(p)
     return
   }
-  for (const it of savedItems) {
+  for (const it of items) {
     const btn = document.createElement('button')
     btn.className = 'pick-item'
     const t = document.createElement('span')
@@ -1108,6 +1108,33 @@ function renderSavedList(): void {
   }
 }
 
+/** 一条历史记录在列表里显示成什么样：标题取题面第一行，说明里写清这条存了哪些东西 */
+function historyItem(r: HistoryRecord): { title: string; desc: string; run: () => void } {
+  const kept = r.scene ? (r.solution ? '题面 · 解题过程 · 3D' : '题面 · 3D') : '只有文字'
+  const withImg = r.image ? `原题图片 · ${kept}` : kept
+  const first = (r.problemText.split('\n')[0] ?? '').trim()
+  const title = first.length > 22 ? `${first.slice(0, 22)}…` : first || '（没有题面）'
+  const d = new Date(r.savedAt)
+  const when = `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  return { title, desc: `${when}　${withImg}`, run: () => openRecord(r) }
+}
+
+/** 内部存储里目前有什么。导入功能做出来之前，这里只放内置的两道测试题。 */
+function importedItems(): { title: string; desc: string; run: () => void }[] {
+  return [
+    {
+      title: '正四棱锥 P-ABCD（走真实建模流程）',
+      desc: '内置测试题：只给题目文字，让模型真的建一遍。要联网、要等几十秒。',
+      run: () => startRealFlow(),
+    },
+    {
+      title: '正四面体：三个面上的动点张成一个新平面',
+      desc: '内置示例：不耗接口、秒开。用来看动点拖动与「点驱动面」。',
+      run: () => loadBuiltinDemo(),
+    },
+  ]
+}
+
 /** 走真实流程的那道测试题：只填题面，不预建场景与解答 */
 function startRealFlow(): void {
   $<HTMLTextAreaElement>('problem-text').value = REALFLOW_PROBLEM
@@ -1115,6 +1142,7 @@ function startRealFlow(): void {
   $('points').textContent = ''
   $('uncertain').textContent = ''
   currentThumb = undefined
+  currentImage = undefined
   currentRecordId = undefined
   currentScene = undefined
   currentSolution = undefined
@@ -1137,6 +1165,7 @@ function loadBuiltinDemo(): void {
   $('points').textContent = ''
   $('uncertain').textContent = ''
   currentThumb = undefined
+  currentImage = undefined
   currentRecordId = undefined
   currentScene = undefined
   currentSolution = undefined
@@ -1186,6 +1215,7 @@ $('btn-type').onclick = () => {
   $('points').textContent = ''
   $('uncertain').textContent = ''
   currentThumb = undefined
+  currentImage = undefined
   currentRecordId = undefined
   currentScene = undefined
   currentSolution = undefined
@@ -1276,6 +1306,7 @@ function openRecord(r: HistoryRecord) {
   $('uncertain').textContent = ''
   currentRecordId = r.id
   currentThumb = r.thumbnail
+  currentImage = r.image
   currentScene = undefined
   currentSolution = undefined
   say('')

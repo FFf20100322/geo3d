@@ -101,6 +101,7 @@
       #scene-tools button { padding: 6px 10px; font-size: 13px; }
       /* 「不用拍照」的两条路：各成一块、各带标题，中间留开距离 */
       .pick-sec { margin-top: 22px; padding-top: 16px; border-top: 1px solid #222833; }
+      .pick-sec.pick-first { margin-top: 0; padding-top: 0; border-top: 0; }
       .pick-sec h3 { margin: 0 0 4px; font-size: 15px; font-weight: 600; color: #e5e7eb; }
       .pick-sec .muted { margin: 0 0 10px; }
       .pick-list { display: flex; flex-direction: column; gap: 8px; }
@@ -201,9 +202,21 @@
 
     <section id="view-saved" class="view">
       <h2>载入已保存的题目</h2>
-      <p class="muted">点一条就打开。从别的手机或电脑导入的题目也会出现在这里。</p>
+      <p class="muted">点一条就打开。每一类都完整保留着原题图片、识别出的题面、解题过程和能转动的 3D 模型。</p>
       <div class="gap"></div>
-      <div id="demo-list" class="pick-list"></div>
+
+      <div class="pick-sec pick-first">
+        <h3>历史记录</h3>
+        <p class="muted">自己拍过、或直接打字建过的题，自动存着，最多留 10 条。</p>
+        <div id="saved-history" class="pick-list"></div>
+      </div>
+
+      <div class="pick-sec">
+        <h3>内部存储</h3>
+        <p class="muted">从别的手机或电脑导入的题目放在这里。</p>
+        <div id="saved-imported" class="pick-list"></div>
+      </div>
+
       <div class="gap"></div>
       <button id="saved-back" class="ghost">返回</button>
     </section>

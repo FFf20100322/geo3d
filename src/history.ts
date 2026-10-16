@@ -17,6 +17,8 @@ export interface HistoryRecord {
   extra: string
   /** 拍下来的那张图的小缩略图，用来在列表里认出是哪道题 */
   thumbnail?: string
+  /** 原题图片（存档里留的那一版）。用户要求存档保留所有的东西，原图是其中一样。 */
+  image?: string
   /** 生成成功过的场景。没有就说明当时只识别了文字 */
   scene?: Scene
   /** 生成成功过的解题过程 */
