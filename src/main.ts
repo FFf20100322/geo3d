@@ -30,7 +30,15 @@ import {
   type AnnotationShape,
 } from './annotation'
 import { createHistory, type HistoryRecord } from './history'
-import { DEMO_PROBLEM, DEMO_SCENE, DEMO_SOLUTION, REALFLOW_PROBLEM } from './demo'
+import {
+  DEMO_PROBLEM,
+  DEMO_SCENE,
+  DEMO_SOLUTION,
+  FULL_PROBLEM,
+  FULL_SCENE,
+  FULL_SOLUTION,
+  REALFLOW_PROBLEM,
+} from './demo'
 import { checkFacesPlanar, edgeKey, faceKey, parseScene, toRenderable, type Scene } from './scene'
 // 显式带上 Highlight：名字与浏览器内置的那个同名类型撞车，不导入就会用错
 import { mountScene3d, type Highlight } from './scene3d'
@@ -1056,8 +1064,59 @@ $('btn-repick').onclick = () => {
  * 载入内置示例题。
  * 走的是跟正常流程完全一样的那条路（解析 → 求解 → 合并辅助线 → 重新求解），
  * 所以它既能给你测界面，也能当作回归自检的种子（demo.check.ts 跑的就是这同一份数据）。
- * （下面 loadBuiltinDemo 就是它，这里留个索引免得找不到。）
+ *
+ * 两道题各有各的用处：
+ * - `tetra` 正四面体：三角形面、点驱动面、三个互相独立的面内动点；
+ * - `cube` 棱长 2 的正方体：四边形面、全部 8 种点类型与 8 种约束、四个问、
+ *   辅助点是**由解答一步步加出来的**（所以播放器有东西可以揭示）。
  */
+function loadBuiltinDemo(which: 'tetra' | 'cube' = 'tetra'): void {
+  const [problem, sceneSrc, solutionSrc] =
+    which === 'cube'
+      ? [FULL_PROBLEM, FULL_SCENE, FULL_SOLUTION]
+      : [DEMO_PROBLEM, DEMO_SCENE, DEMO_SOLUTION]
+  $<HTMLTextAreaElement>('problem-text').value = problem
+  $<HTMLTextAreaElement>('extra').value = ''
+  $('points').textContent = ''
+  $('uncertain').textContent = ''
+  currentThumb = undefined
+  currentImage = undefined
+  currentRecordId = undefined
+  currentScene = undefined
+  currentSolution = undefined
+  stopPlay()
+
+  try {
+    const parsed = parseScene(sceneSrc)
+    const solved = solve(parsed.points, parsed.constraints)
+    if (!solved.ok) throw new Error(`示例场景解不出来，最大残差 ${solved.maxError.toExponential(2)}`)
+
+    const sol = parseSolution(solutionSrc, parsed)
+    const merged = mergeSolution(parsed, sol)
+    const reSolved = solve(merged.points, merged.constraints)
+    if (!reSolved.ok) throw new Error('加上辅助线后示例图形对不上了')
+
+    currentScene = parsed
+    currentSolution = sol
+    currentSolvedAll = { ...reSolved.points }
+    stepIndex = -1
+    stepProgress = -1
+    rememberFigure(merged)
+    scene?.setScene(toRenderable(merged, reSolved.points, parsed))
+    pickDefaultMode()
+    refreshAnnotations()
+    // 必须在这里把揭示状态重置一次。
+    // 漏了这一步的后果真机上见过：刚载入时「全部」档下少了两条辅助线（PE、FN），
+    // 因为 setReveal 只有 applyStep 会调，而这里原来没调 —— 图形的可见性就停在上一次留下的状态上。
+    applyStep()
+    renderSolution(sol)
+    $<HTMLButtonElement>('btn-generate').textContent = '重新解题'
+    say('已载入内置示例。', 'ok')
+    show('solution')
+  } catch (e) {
+    say(`示例载入失败：${message(e)}`, 'err')
+  }
+}
 
 function renderSavedList(): void {
   const records = history.list()
@@ -1116,7 +1175,12 @@ function importedItems(): { title: string; desc: string; run: () => void }[] {
     {
       title: '正四面体：三个面上的动点张成一个新平面',
       desc: '内置示例：不耗接口、秒开。用来看动点拖动与「点驱动面」。',
-      run: () => loadBuiltinDemo(),
+      run: () => loadBuiltinDemo('tetra'),
+    },
+    {
+      title: '正方体：四个问，把功能用满的那道',
+      desc: '内置示例：不耗接口、秒开。异面直线角、二面角、线面角、动点距离各一问；辅助点由解答一步步加出来，适合看播放器怎么画线。',
+      run: () => loadBuiltinDemo('cube'),
     },
   ]
 }
@@ -1140,54 +1204,6 @@ function startRealFlow(): void {
   say('已填入一道测试题。可以直接改，或全选替换成你自己的题目，然后点「开始解题」。')
 }
 
-/**
- * 载入内置示例题。
- * 走的是跟正常流程完全一样的那条路（解析 → 求解 → 合并辅助线 → 重新求解），
- * 所以它既能给你测界面，也能当作回归自检的种子（demo.check.ts 跑的就是这同一份数据）。
- */
-function loadBuiltinDemo(): void {
-  $<HTMLTextAreaElement>('problem-text').value = DEMO_PROBLEM
-  $<HTMLTextAreaElement>('extra').value = ''
-  $('points').textContent = ''
-  $('uncertain').textContent = ''
-  currentThumb = undefined
-  currentImage = undefined
-  currentRecordId = undefined
-  currentScene = undefined
-  currentSolution = undefined
-  stopPlay()
-
-  try {
-    const parsed = parseScene(DEMO_SCENE)
-    const solved = solve(parsed.points, parsed.constraints)
-    if (!solved.ok) throw new Error(`示例场景解不出来，最大残差 ${solved.maxError.toExponential(2)}`)
-
-    const sol = parseSolution(DEMO_SOLUTION, parsed)
-    const merged = mergeSolution(parsed, sol)
-    const reSolved = solve(merged.points, merged.constraints)
-    if (!reSolved.ok) throw new Error('加上辅助线后示例图形对不上了')
-
-    currentScene = parsed
-    currentSolution = sol
-    currentSolvedAll = { ...reSolved.points }
-    stepIndex = -1
-    stepProgress = -1
-    rememberFigure(merged)
-        scene?.setScene(toRenderable(merged, reSolved.points, parsed))
-    pickDefaultMode()
-    refreshAnnotations()
-    // 必须在这里把揭示状态重置一次。
-    // 漏了这一步的后果真机上见过：刚载入时「全部」档下少了两条辅助线（PE、FN），
-    // 因为 setReveal 只有 applyStep 会调，而这里原来没调 —— 图形的可见性就停在上一次留下的状态上。
-    applyStep()
-    renderSolution(sol)
-    $<HTMLButtonElement>('btn-generate').textContent = '重新解题'
-    say('已载入内置示例。', 'ok')
-    show('solution')
-  } catch (e) {
-    say(`示例载入失败：${message(e)}`, 'err')
-  }
-}
 
 /**
  * 直接输入题目文字，不用拍照。

@@ -1,4 +1,11 @@
-import { DEMO_PROBLEM, DEMO_SCENE, DEMO_SOLUTION } from './demo.ts'
+import {
+  DEMO_PROBLEM,
+  DEMO_SCENE,
+  DEMO_SOLUTION,
+  FULL_EXPECT,
+  FULL_SCENE,
+  FULL_SOLUTION,
+} from './demo.ts'
 import { checkFacesPlanar, faceKey, parseScene, toRenderable } from './scene.ts'
 import { mergeSolution, parseElementName, parseSolution } from './solution.ts'
 import { isMoving, reevaluate, solve, type Vec3 } from './solver.ts'
@@ -162,6 +169,123 @@ console.log('\n【元素名解析】')
   ok('一条棱', parseElementName('PA', known, scene.faces)?.edge?.[0] === 'P')
   ok('三角形面', !!parseElementName('PAB', known, scene.faces)?.face)
   ok('不存在的元素要被拒绝', parseElementName('XYZ', known, scene.faces) === null)
+}
+
+console.log('\n【内置测试题之二：正方体 —— 四个问的答案逐个复核】')
+{
+  // 这道题存在的意义就是「把功能用满 + 答案手工算准」。
+  // 下面这些期望值是**按几何算出来的**，不是从程序里抄的 ——
+  // 程序算出来对不上，就说明程序错了（或者我算错了，两种都该当场发现）。
+  const parsed = parseScene(FULL_SCENE)
+  ok('场景解析通过', true, `${parsed.points.length} 个点 / ${parsed.constraints.length} 条约束`)
+
+  const solved = solve(parsed.points, parsed.constraints)
+  ok('正方体能解出来', solved.ok, solved.ok ? '' : `最大残差 ${solved.maxError.toExponential(2)}`)
+
+  if (solved.ok) {
+    const base = reevaluate(parsed.points, solved.points)
+    // 注意点名：求解结果里用的是**显示名**（A₁ 是下标字符 ₁，不是数字 1）。
+    // 源码里为了好写用 A1，取的时候要转一下 —— 转不出来就直接报错
+    // （静默返回 undefined 会变成一句莫名其妙的「reading '0'」）。
+    const pick = (P: Record<string, Vec3>, n: string): Vec3 => {
+      const v = P[n] ?? P[n.replace(/1$/, '₁')]
+      if (!v) throw new Error(`求解结果里没有点 ${n}`)
+      return v
+    }
+    const at = (n: string) => pick(base, n)
+
+    // ---- 形状：十二条棱都该是 2（这些点都在场景里，不用等解答） ----
+    const cubeEdges: [string, string][] = [
+      ['A', 'B'], ['B', 'C'], ['C', 'D'], ['D', 'A'],
+      ['A1', 'B1'], ['B1', 'C1'], ['C1', 'D1'], ['D1', 'A1'],
+      ['A', 'A1'], ['B', 'B1'], ['C', 'C1'], ['D', 'D1'],
+    ]
+    const badEdges = cubeEdges.filter(([a, b]) => !near(d3(at(a), at(b)), 2, 1e-6))
+    ok('十二条棱长度都是 2', badEdges.length === 0, badEdges.map((e) => e.join('')).join(' '))
+
+    const diags = [['A', 'C1'], ['B', 'D1'], ['C', 'A1'], ['D', 'B1']]
+    ok(
+      '四条体对角线都是 2√3',
+      diags.every(([a, b]) => near(d3(at(a), at(b)), 2 * Math.sqrt(3), 1e-6)),
+    )
+  }
+
+  // ---- 解答：解析 → 合并辅助点与辅助线 → 重新求解。
+  // 四个问要用到的 O、H、M、G、N 都是**解答加出来的**，所以答案要在合并后的图形上验。
+  const sol = solved.ok ? parseSolution(FULL_SOLUTION, parsed) : null
+  if (sol) {
+    ok('解答解析通过', true, `${sol.steps.length} 步 / ${sol.angles.length} 个角 / ${sol.lengths.length} 个长度`)
+    const merged = mergeSolution(parsed, sol)
+    const re = solve(merged.points, merged.constraints)
+    ok('加上辅助线后仍然对得上', re.ok, re.ok ? '' : `最大残差 ${re.maxError.toExponential(2)}`)
+
+    if (re.ok) {
+      const P = reevaluate(merged.points, re.points)
+      const at2 = (n: string) => {
+        const v = P[n] ?? P[n.replace(/1$/, '₁')]
+        if (!v) throw new Error(`合并后的图形里没有点 ${n}`)
+        return v
+      }
+      ok('解答确实把辅助点补出来了', ['O', 'H', 'M', 'G', 'N'].every((n) => !!P[n]), Object.keys(P).length + ' 个点')
+
+      // 两条独立来路该落到同一个点：O 是 AC 中点，H 是 A₁ 在 BD 上的射影
+      ok(
+        '底面中心 O 与 A₁ 到 BD 的射影 H 重合（两条独立定义互相印证）',
+        d3(at2('O'), at2('H')) < 1e-6,
+        `相距 ${d3(at2('O'), at2('H')).toExponential(2)}`,
+      )
+
+      const angleOf = (a: Vec3, b: Vec3) => {
+        const dot = a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+        const c = Math.max(-1, Math.min(1, dot / (Math.hypot(...a) * Math.hypot(...b))))
+        return (Math.acos(c) * 180) / Math.PI
+      }
+      const deg1 = angleOf(sub(at2('A1'), at2('B')), sub(at2('B1'), at2('C')))
+      ok('（1）A₁B 与 B₁C 所成角 = 60°', near(deg1, FULL_EXPECT.skewAngleDegrees, 1e-6), `${deg1.toFixed(6)}°`)
+
+      const u = sub(at2('O'), at2('A'))
+      const v = sub(at2('O'), at2('A1'))
+      const cos2 =
+        (u[0] * v[0] + u[1] * v[1] + u[2] * v[2]) / (Math.hypot(...u) * Math.hypot(...v))
+      ok('（2）二面角 A₁-BD-A 的余弦 = √3/3', near(cos2, FULL_EXPECT.dihedralCos, 1e-6), `${cos2.toFixed(6)}`)
+
+      const hG = Math.abs(at2('G')[1] - at2('A')[1])
+      const sin3 = hG / d3(at2('A1'), at2('G'))
+      ok('（3）A₁G 与底面所成角的正弦 = 1/3', near(sin3, FULL_EXPECT.linePlaneSin, 1e-6), `${sin3.toFixed(6)}`)
+
+      // （4）E 在顶棱上（离底面 2）、F 在底面内（离底面 0），所以 EF ≥ 2，且竖直对齐时能取到。
+      // 这里暴力扫一遍参数空间 —— 它是独立于解法的复核，比顺着推导再算一遍可信。
+      const lerp = (a: Vec3, b: Vec3, t: number): Vec3 => [
+        a[0] + t * (b[0] - a[0]),
+        a[1] + t * (b[1] - a[1]),
+        a[2] + t * (b[2] - a[2]),
+      ]
+      const onBase = (s: number, w: number): Vec3 => {
+        const p1 = lerp(at2('A'), at2('B'), s)
+        const p2 = lerp(at2('D'), at2('C'), s)
+        return lerp(p1, p2, w)
+      }
+      let minEF = Infinity
+      for (let i = 0; i <= 40; i++)
+        for (let j = 0; j <= 40; j++)
+          for (let k = 0; k <= 40; k++)
+            minEF = Math.min(minEF, d3(lerp(at2('A1'), at2('B1'), i / 40), onBase(j / 40, k / 40)))
+      ok('（4）EF 的最小值 = 2', Math.abs(minEF - FULL_EXPECT.minEF) < 2e-2, `扫出来 ${minEF.toFixed(4)}`)
+
+      const dist = d3(at2('A'), at2('N'))
+      ok('附带：A 到平面 A₁BD 的距离 = 2√3/3', near(dist, FULL_EXPECT.distAToPlaneA1BD, 1e-6), `${dist.toFixed(6)}`)
+
+      const r = toRenderable(merged, re.points, parsed)
+      ok(
+        '渲染数据齐备',
+        r.vertices.length > 0 && r.edges.length > 0 && r.faces.length > 0,
+        `${r.vertices.length} 点 / ${r.edges.length} 棱 / ${r.faces.length} 面`,
+      )
+      ok('所有面都共面', checkFacesPlanar(r).length === 0, checkFacesPlanar(r).join(' '))
+      // 辅助线要真的多出来 —— 这是「播放器有东西可揭示」的前提
+      ok('辅助线比场景里的多', r.edges.filter((e) => e.aux).length >= 5, `${r.edges.filter((e) => e.aux).length} 条辅助线`)
+    }
+  }
 }
 
 console.log(`\n${failed === 0 ? '✓ 全部通过' : `✗ ${failed} 项未通过`}`)

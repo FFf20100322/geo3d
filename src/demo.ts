@@ -136,3 +136,181 @@ export const DEMO_SOLUTION = {
     { p: ['E', 'F'], label: 'EF' },
   ],
 }
+
+/**
+ * 内置测试题之二：**棱长为 2 的正方体**。这道题的目标不是好看，是**把功能用满**。
+ *
+ * 与正四面体那道互补：那道考三角形面、点驱动面、三个独立的面内动点；
+ * 这道考**四边形面、全部 8 种点类型、全部 8 种约束类型、四个问**。
+ *
+ * 覆盖清单：
+ *   - 点类型 8 种全上：free（A、B、C、D、A₁）、offset（B₁、C₁、D₁）、
+ *     midpoint（M、G）、ratio（O）、perpFoot（N）、projLine（H）、
+ *     onSegment（E，在棱上滑）、inFace（F，在底面里滑）
+ *   - 约束 8 种全上：distance、equalDistance、angle、lineAngle、
+ *     perpendicular、parallel、perpLinePlane、coplanar
+ *   - **同一位置的两条独立来路**：O 是「AC 的中点」，H 是「A₁ 到 BD 的射影」——
+ *     二者应该重合。这是内置的一致性检查：两条定义若算出不同的点，说明哪一处错了。
+ *   - 四边形面（正方体的六个面）与三角形面（截面 A₁BD）混在一起
+ *   - 三类角各一个：异面直线角、二面角、线面角
+ *   - 长度标注：定值（AB、A₁N）与动点之间的实时值（EF）
+ *
+ * 四个问的答案都是**手工算准后写进 FULL_EXPECT 的**，不靠模型给：
+ *   （1）异面直线 A₁B 与 B₁C 所成角 = 60°
+ *   （2）二面角 A₁-BD-A 的正切 = √2（余弦 = √3/3）
+ *   （3）A₁G 与底面所成角的正弦 = 1/3
+ *   （4）EF 的最小值 = 2（E 在顶面棱上、F 在底面内，二者最近时竖直对齐）
+ *   附：点 A 到平面 A₁BD 的距离 = 2√3/3
+ */
+export const FULL_PROBLEM = `在棱长为 2 的正方体 ABCD-A₁B₁C₁D₁ 中，M 是棱 AA₁ 的中点，G 是棱 CC₁ 的中点，O 是底面 ABCD 的中心。
+（1）求异面直线 A₁B 与 B₁C 所成角的大小；
+（2）求二面角 A₁-BD-A 的正切值；
+（3）求 A₁G 与底面 ABCD 所成角的正弦值；
+（4）点 E 是棱 A₁B₁ 上的动点，点 F 在底面 ABCD 内运动，求线段 EF 的最小值。`
+
+export const FULL_SCENE = {
+  points: [
+    // 底面四个顶点与 A₁ 用自由点，靠约束把正方体钉死；
+    // 其余三个顶面顶点由 offset（平移派生）算出来 —— 它们天然就是棱柱的顶点，不需要再约束。
+    { name: 'A', kind: 'free', at: [0, 0, 0] },
+    { name: 'B', kind: 'free', at: [2, 0, 0] },
+    { name: 'C', kind: 'free', at: [2, 0, 2] },
+    { name: 'D', kind: 'free', at: [0, 0, 2] },
+    { name: 'A1', kind: 'free', at: [0, 2, 0] },
+    { name: 'B1', kind: 'offset', of: ['A1', 'B', 'A'] },
+    { name: 'C1', kind: 'offset', of: ['B1', 'C', 'B'] },
+    { name: 'D1', kind: 'offset', of: ['A1', 'D', 'A'] },
+    // 两个动点必须在场景里（拖动要靠它们自己在 DEFS 里），不能等到某一步才加出来。
+    // E 在顶面棱上滑，F 在底面里滑。
+    { name: 'E', kind: 'onSegment', of: ['A1', 'B1'], t: 0.5 },
+    { name: 'F', kind: 'inFace', face: ['A', 'B', 'C', 'D'], u: 0.35, v: 0.6 },
+    // 其余的辅助点（M、G、O、H、N）**故意不放在这里**，而是由解答的某一步「加出来」——
+    // 这样播放器才有东西可以揭示：一段一段地看着辅助点与辅助线被补上，
+    // 而不是一打开就什么都摆在那儿。
+  ],
+  constraints: [
+    // 钉死正方体所需的八条：底面是边长 2 的正方形（4 条边 + 1 个直角），
+    // A₁ 由「垂直底面 + 棱长 2」定住（3 条）。
+    { kind: 'distance', a: 'A', b: 'B', value: 2 },
+    { kind: 'distance', a: 'B', b: 'C', value: 2 },
+    { kind: 'distance', a: 'C', b: 'D', value: 2 },
+    { kind: 'distance', a: 'D', b: 'A', value: 2 },
+    { kind: 'angle', at: 'A', from: 'D', to: 'B', value: 90 },
+    { kind: 'perpLinePlane', line: ['A', 'A1'], plane: ['A', 'B', 'C'] },
+    { kind: 'distance', a: 'A', b: 'A1', value: 2 },
+    // 下面几条是**冗余但成立**的：它们不增加信息，但把剩下的约束类型也过一遍，
+    // 顺带检验求解器面对「多余条件」不会跑偏。
+    { kind: 'equalDistance', ab: ['A', 'B'], cd: ['C', 'D'] },
+    { kind: 'perpendicular', p: ['A', 'B'], q: ['B', 'C'] },
+    { kind: 'parallel', p: ['A', 'B'], q: ['D', 'C'] },
+    { kind: 'coplanar', pts: ['A', 'B', 'C', 'D'] },
+    { kind: 'lineAngle', p: ['A1', 'B'], q: ['B1', 'C'], value: 60 },
+  ],
+  edges: [
+    // 正方体的十二条棱 + 动点连线。辅助线都由解答的步骤加出来。
+    ['A', 'B'], ['B', 'C'], ['C', 'D'], ['D', 'A'],
+    ['A1', 'B1'], ['B1', 'C1'], ['C1', 'D1'], ['D1', 'A1'],
+    ['A', 'A1'], ['B', 'B1'], ['C', 'C1'], ['D', 'D1'],
+    ['E', 'F'],
+  ],
+  faces: [
+    ['A', 'B', 'C', 'D'],
+    ['A1', 'B1', 'C1', 'D1'],
+    ['A', 'B', 'B1', 'A1'],
+    ['B', 'C', 'C1', 'B1'],
+    ['C', 'D', 'D1', 'C1'],
+    ['D', 'A', 'A1', 'D1'],
+    // 截面 A₁BD：三角形面，与上面六个四边形面走不同分支。
+    // 第（1）问的 60° 与最后一问的点面距离都要靠它，所以它得在场景里，而不是等某一步加。
+    ['A1', 'B', 'D'],
+  ],
+}
+
+/** 这道题的四个答案 + 一个附带的距离。手工算准的，测试拿它当基准。 */
+export const FULL_EXPECT = {
+  skewAngleDegrees: 60,
+  dihedralCos: Math.sqrt(3) / 3,
+  linePlaneSin: 1 / 3,
+  minEF: 2,
+  distAToPlaneA1BD: (2 * Math.sqrt(3)) / 3,
+}
+
+export const FULL_SOLUTION = {
+  steps: [
+    {
+      title: '先把这个正方体摆出来',
+      text: '底面 ABCD 是边长 2 的正方形，AA₁ 垂直底面且 AA₁ = 2。顶面三个顶点由平移得到。',
+      why: '正方体的基本结构',
+      addPoints: [],
+      addEdges: [
+        ['A', 'B'], ['B', 'C'], ['C', 'D'], ['D', 'A'],
+        ['A1', 'B1'], ['B1', 'C1'], ['C1', 'D1'], ['D1', 'A1'],
+        ['A', 'A1'], ['B', 'B1'], ['C', 'C1'], ['D', 'D1'],
+      ],
+      uses: ['ABCD', 'A1B1C1D1', 'A', 'A1'],
+    },
+    {
+      title: '第（1）问：异面直线 A₁B 与 B₁C 所成角',
+      text: '把 B₁C 平移到 A₁D，它就与 A₁B 相交于 A₁。于是所求角就是 ∠BA₁D，而 △A₁BD 是正三角形，所以是 60°。',
+      why: '异面直线所成角要平移到相交',
+      addPoints: [],
+      addEdges: [['A1', 'B'], ['B1', 'C'], ['A1', 'D'], ['B', 'D']],
+      uses: ['A1B', 'B1C', 'A1'],
+    },
+    {
+      title: '第（2）问：二面角 A₁-BD-A',
+      text: 'O 是底面中心，也是 A 与 A₁ 在 BD 上的垂足。所以二面角的平面角就是 ∠AOA₁，而 AO ⊥ 底面、AA₁ ⊥ 底面，于是 tan∠AOA₁ = AA₁ / AO = 2 / √2 = √2。',
+      why: '二面角要找垂直于棱的两条线',
+      addPoints: [
+        { name: 'O', kind: 'ratio', of: ['A', 'C'], t: 0.5 },
+        // H 是「A₁ 在 BD 上的射影」，与 O 是同一个点的另一条来路 —— 两条独立定义互相印证
+        { name: 'H', kind: 'projLine', of: ['A1', 'B', 'D'] },
+      ],
+      addEdges: [['A1', 'H'], ['A', 'H']],
+      uses: ['BD', 'A1H', 'AH', 'O'],
+    },
+    {
+      title: '第（3）问：A₁G 与底面所成角',
+      text: 'G 是 CC₁ 的中点，所以 G 到底面的距离是 1（CC₁ 的一半）。而 A₁G 的长是 √(2² + 1² + 2²) = 3。线面角的正弦就是「高比斜边」＝ 1/3。',
+      why: '线面角的正弦 = 端点到面的距离 / 斜线长',
+      addPoints: [{ name: 'G', kind: 'midpoint', of: ['C', 'C1'] }],
+      addEdges: [['A1', 'G'], ['C', 'G']],
+      uses: ['A1G', 'G'],
+    },
+    {
+      title: '第（4）问：动点 E、F 之间距离的最小值',
+      text: 'E 在顶面的棱 A₁B₁ 上，离底面 2；F 在底面内，离底面 0。所以 EF 至少是 2，而且当 E 与 F 竖直对齐时正好取到 2 —— 最小值就是 2。',
+      why: '两条平行线上两点距离的最小值就是它们之间的距离',
+      addPoints: [],
+      addEdges: [],
+      uses: ['EF', 'E', 'F'],
+    },
+    {
+      title: '附带：点 A 到平面 A₁BD 的距离',
+      text: 'N 是 A 在平面 A₁BD 上的垂足。对角线 AC₁ 垂直于平面 A₁BD，所以这条距离等于 AC₁ 的三分之一，即 2√3/3。',
+      why: '正方体的体对角线垂直于截面 A₁BD',
+      addPoints: [
+        { name: 'N', kind: 'perpFoot', of: ['A', 'A1', 'B', 'D'] },
+        { name: 'M', kind: 'midpoint', of: ['A', 'A1'] },
+      ],
+      addEdges: [['A', 'N']],
+      uses: ['AN', 'N', 'A1BD'],
+    },
+  ],
+  answers: [
+    { label: '（1）A₁B 与 B₁C 所成角', value: '60°' },
+    { label: '（2）二面角 A₁-BD-A 的正切', value: '√2' },
+    { label: '（3）A₁G 与底面所成角的正弦', value: '1/3' },
+    { label: '（4）EF 的最小值', value: '2' },
+  ],
+  angles: [
+    { kind: 'lineLine', p: ['A1', 'B'], q: ['B1', 'C'], label: 'A₁B 与 B₁C 所成角', value: '60°', of: 'degrees' },
+    { kind: 'dihedral', edge: ['B', 'D'], inA: 'A1', inB: 'A', label: '二面角 A₁-BD-A', value: '√3/3', of: 'cos' },
+    { kind: 'linePlane', line: ['A1', 'G'], plane: ['A', 'B', 'C'], label: 'A₁G 与底面所成角', value: '1/3', of: 'sin' },
+  ],
+  lengths: [
+    { p: ['A', 'B'], label: 'AB', value: '2' },
+    { p: ['A', 'N'], label: 'A 到平面A₁BD', value: '2√3/3' },
+    { p: ['E', 'F'], label: 'EF' },
+  ],
+}
