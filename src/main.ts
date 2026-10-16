@@ -121,6 +121,8 @@ function syncSceneChrome(): void {
 
   $('scene-tools').style.display = onSceneView ? 'flex' : 'none'
   $('mode-toggle').textContent = editMode ? '完成' : '调节'
+  // 页面最下面那行淡灰文字（展开/收起 + 操作提示）只在 3D 页出现
+  $('footline').style.display = onSceneView ? 'flex' : 'none'
 
   // 面板里现在放两样东西：动点的滑杆、以及元素清单。
   // 但**没有真正的图形时一个都不给** —— 挂载后 3D 页会先放一个占位图形，
@@ -624,7 +626,7 @@ function syncViewInset(): void {
 
   // 底部这些条子谁最高就以谁为准
   const tops: number[] = []
-  for (const id of ['player', 'scene-caption', 'hint']) {
+  for (const id of ['player', 'scene-caption', 'hint', 'footline']) {
     const el = $(id)
     if (el.style.display === 'none') continue
     const r = el.getBoundingClientRect()
@@ -1948,13 +1950,16 @@ function stopPlay(): void {
 }
 
 /**
- * 底部那一行的收起/展开。
- * 收起之后图形能多看一截 —— 上下的让位是量真实元素高度算的，
- * 所以这里改完只要让 syncViewInset 重算一次，相机的取景也会跟着重新适配。
+ * 页面最下面那一行淡灰文字上的「收起 / 展开」。
+ *
+ * 收起之后**全页只剩这一行** —— 播放器、题面、问/解法标签全都隐藏，
+ * 这是用户明确要的：「只有展开一个按钮，它上面和旁边的全部隐藏，在展开的时候再显示」。
+ * 收起时图形自然就多看一截，所以收完要让位重算一次。
  */
-$('pl-fold').onclick = () => {
-  const folded = $('player').classList.toggle('folded')
-  $('pl-fold').textContent = folded ? '▲ 展开' : '▼ 收起'
+$('foot-fold').onclick = () => {
+  const folded = document.body.classList.toggle('folded')
+  $('foot-fold').textContent = folded ? '▼ 展开' : '▲ 收起'
+  $('qsel').style.display = folded ? 'none' : 'flex'
   syncViewInset()
 }
 

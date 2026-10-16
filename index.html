@@ -68,18 +68,23 @@
       #top-balance { font-size: 12px; color: #7dd3a0; background: rgba(46,204,113,.12); border: 1px solid rgba(46,204,113,.3); border-radius: 999px; padding: 3px 9px; margin-right: 4px; white-space: nowrap; }
       /* 窄屏上把标题让出去，保证余额与四个入口都放得下 */
       @media (max-width: 400px) { #bar-title { display: none; } }
-      #hint { position: fixed; left: 12px; bottom: 10px; font-size: 12px; opacity: .55; pointer-events: none; z-index: 15; display: none; }
+      /* 页面最下面一行：展开/收起 + 操作提示。**淡灰文字，不做成框** ——
+         用户要的是「一起用淡灰色在页面最下方表示」，不是两个按钮。
+         收起之后全页只剩这一行。 */
+      #footline { position: fixed; left: 12px; right: 12px; bottom: 8px; z-index: 15; display: none; align-items: center; gap: 10px; font-size: 12px; color: #8b95a5; }
+      #footline #foot-fold { flex: none; padding: 0; border: 0; background: none; color: #8b95a5; font-size: 12px; text-decoration: underline; text-underline-offset: 3px; }
+      #footline #hint { flex: 1 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
       #scene-caption { position: fixed; left: 12px; right: 12px; bottom: 32px; z-index: 15; display: none; padding: 8px 12px; border-radius: 10px; background: rgba(20,26,34,.86); border: 1px solid #2b3442; font-size: 13px; color: #cbd5e1; cursor: pointer; }
       #labels .pt.aux { color: #7dd3a0; }
 
       #player { position: fixed; left: 12px; right: 12px; bottom: 76px; z-index: 16; display: none; }
       #player .pl-row { display: flex; gap: 6px; align-items: center; padding: 6px; border-radius: 10px; background: rgba(20,26,34,.9); border: 1px solid #2b3442; }
-      /* 收起状态：按钮与滑杆收掉，只留「步骤说明 + 展开」那一行。
-         收起按钮自己不藏（收起后就变成「展开」），否则就没有东西能点开它了。 */
-      #player.folded .pl-row, #player.folded #pl-range { display: none; }
+      /* 收起状态：**整块播放器与题面都藏起来**，页面最下面只留那行淡灰文字。
+         用户要的是「收起以后只有展开一个按钮，它上面和旁边的全部隐藏」。 */
+      #player.folded, body.folded #player { display: none !important; }
+      body.folded #scene-caption { display: none !important; }
       .pl-bottom { display: flex; align-items: flex-start; gap: 8px; margin-top: 6px; }
       .pl-bottom #pl-text { flex: 1 1 auto; min-width: 0; margin-top: 0; }
-      .pl-bottom #pl-fold { flex: none; }
       /* 步骤说明压缩过：内边距与行距都收小，最多两行、多出来的省略。
          它原来是按「一段说明」排的，占掉小半个屏幕 —— 但那只是当前这一步的一句话。 */
       /* 步骤说明压缩过：内边距与行距收小，最多两行、多出来的省略。
@@ -330,18 +335,20 @@
         <span id="pl-label">全部</span>
       </div>
       <input id="pl-range" type="range" min="-1" max="0" step="1" value="-1" />
-      <!-- 步骤说明与收起按钮同一行：收起之后这一行整个留下来，
-           按钮变成「展开」，说明文字还在旁边 —— 收起只是把按钮与滑杆收掉，
-           不是把解题过程也一起收掉。 -->
+      <!-- 步骤说明。收起按钮不在这里 —— 它在页面最下面那一行淡灰文字里。 -->
       <div class="pl-bottom">
         <div id="pl-text"></div>
-        <button id="pl-fold" class="ghost small" title="把按钮和滑杆收起来，多看一点图形">▼ 收起</button>
       </div>
     </div>
     <div id="scene-caption"></div>
+    <!-- 页面最下面一行：展开/收起 + 操作提示，都用淡灰文字，不做成框。
+         收起之后这一行是唯一留下的东西，上面和旁边的全部隐藏。 -->
+    <div id="footline">
+      <button id="foot-fold" type="button">▲ 收起</button>
+      <span id="hint">单指拖动旋转 · 双指缩放平移</span>
+    </div>
     <!-- 问与解法的切换按钮。只有「一问多解」的题才会出现内容，别的题这里是空的。 -->
     <div id="qsel"></div>
-    <div id="hint">单指拖动旋转 · 双指缩放平移</div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
