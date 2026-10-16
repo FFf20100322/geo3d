@@ -71,6 +71,9 @@ function show(v: ViewName | '3d') {
   onSceneView = v === '3d'
   scene?.setActive(onSceneView)
   updateCaption(onSceneView)
+  // 「载入已保存的题目」列表每次回到拍题页都重画一遍 ——
+  // 以后导入的题目是随时可能增加的，画一次就定死在页面上会漏掉新来的。
+  if (v === 'photo') renderSavedList()
   syncSceneChrome()
 }
 
@@ -1057,7 +1060,77 @@ $('btn-repick').onclick = () => {
  * 走的是跟正常流程完全一样的那条路（解析 → 求解 → 合并辅助线 → 重新求解），
  * 所以它既能给你测界面，也能当作回归自检的种子（demo.check.ts 跑的就是这同一份数据）。
  */
-$('btn-demo').onclick = () => {
+/**
+ * 「载入已保存的题目」列表。
+ *
+ * 内置示例是一个**能点选的列表**，而不是一个笼统的按钮 ——
+ * 以后从别的手机或电脑导入的题目（`.g3d`）也进这个列表，所以它一开始就得是列表的形状，
+ * 免得等导入做出来再改一遍版式。
+ */
+type SavedItem = { title: string; desc: string; run: () => void }
+
+const savedItems: SavedItem[] = [
+  {
+    title: '正四棱锥 P-ABCD（走真实建模流程）',
+    desc: '只给题目文字，让模型真的建一遍。会走完整链路，要联网、要等几十秒。',
+    run: () => startRealFlow(),
+  },
+  {
+    title: '正四面体：三个面上的动点张成一个新平面',
+    desc: '不耗接口、秒开的示例。用来看动点拖动与「点驱动面」，也是回归自检的种子。',
+    run: () => loadBuiltinDemo(),
+  },
+]
+
+function renderSavedList(): void {
+  const box = $('demo-list')
+  box.innerHTML = ''
+  if (!savedItems.length) {
+    const p = document.createElement('p')
+    p.className = 'pick-empty'
+    p.textContent = '还没有可载入的题目。'
+    box.appendChild(p)
+    return
+  }
+  for (const it of savedItems) {
+    const btn = document.createElement('button')
+    btn.className = 'pick-item'
+    const t = document.createElement('span')
+    t.className = 't'
+    t.textContent = it.title
+    const d = document.createElement('span')
+    d.className = 'd'
+    d.textContent = it.desc
+    btn.append(t, d)
+    btn.onclick = () => it.run()
+    box.appendChild(btn)
+  }
+}
+
+/** 走真实流程的那道测试题：只填题面，不预建场景与解答 */
+function startRealFlow(): void {
+  $<HTMLTextAreaElement>('problem-text').value = REALFLOW_PROBLEM
+  $<HTMLTextAreaElement>('extra').value = ''
+  $('points').textContent = ''
+  $('uncertain').textContent = ''
+  currentThumb = undefined
+  currentRecordId = undefined
+  currentScene = undefined
+  currentSolution = undefined
+  sceneFromText = ''
+  solutionFromText = ''
+  stopPlay()
+  $<HTMLButtonElement>('btn-generate').textContent = '开始解题'
+  show('text')
+  say('已填入一道测试题。可以直接改，或全选替换成你自己的题目，然后点「开始解题」。')
+}
+
+/**
+ * 载入内置示例题。
+ * 走的是跟正常流程完全一样的那条路（解析 → 求解 → 合并辅助线 → 重新求解），
+ * 所以它既能给你测界面，也能当作回归自检的种子（demo.check.ts 跑的就是这同一份数据）。
+ */
+function loadBuiltinDemo(): void {
   $<HTMLTextAreaElement>('problem-text').value = DEMO_PROBLEM
   $<HTMLTextAreaElement>('extra').value = ''
   $('points').textContent = ''
