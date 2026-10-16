@@ -6,6 +6,7 @@ import {
   buildLength,
   buildRatio,
   enumerateAngles,
+  formatAngle,
   isRightAngle,
   pointNamesOf,
   selectImportant,
@@ -414,6 +415,33 @@ console.log('\n【端到端：题面问的那个二面角，必须进得了「�
     const picked = selectImportant(items, 8)
     const pickedDihedral = [...picked].some((i) => items[i].kind === 'dihedral')
     ok('题面问的那个二面角被选进了「重要」档', pickedDihedral, `选中 ${picked.size} 条`)
+  }
+}
+
+console.log('\n【标注文字：两条标注不能写出一模一样的话】')
+{
+  // 真机上看到「∠APN = 30°」好像出现了两次，但截图里文字叠在一起看不准是
+  // 「真重复」还是「两条不同的标注叠在一起」。这种判断不该靠眯眼看截图 —— 让程序说。
+  const parsed = parseScene(DEMO_SCENE)
+  const solved = solve(parsed.points, parsed.constraints)
+  if (solved.ok) {
+    const r = toRenderable(parsed, solved.points)
+    const specs = enumerateAngles(
+      r.edges.map((e) => e.key.split('|') as [string, string]),
+      r.faces.map((f) => f.names),
+    )
+    const lookup = (name: string) => solved.points[name]
+    const seen = new Map<string, string>()
+    const dupes: string[] = []
+    for (const s of specs) {
+      const a = buildAnnotation(s, lookup, 0.3, 'degrees')
+      if (!a) continue
+      const t = formatAngle(s, a.degrees, 'degrees').text
+      const where = JSON.stringify(s)
+      if (seen.has(t)) dupes.push(`${t}　← ${seen.get(t)} 与 ${where}`)
+      else seen.set(t, where)
+    }
+    ok('没有两条角标注的文字完全相同', dupes.length === 0, dupes.slice(0, 3).join(' ｜ '))
   }
 }
 

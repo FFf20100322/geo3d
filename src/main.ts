@@ -620,6 +620,14 @@ function syncViewInset(): void {
     $('dyn-body').style.maxHeight = `${Math.max(140, Math.min(avail, window.innerHeight * 0.6))}px`
   }
 
+  // 题面那块与播放行都固定在底部，播放行还会往上长 ——
+  // 真机上见过两块文字画在同一个位置，字压着字，两块都读不出来。
+  // 让位只算了「画布该躲开谁」，没管「这两块之间会不会撞上」。
+  // 所以题面的下边距跟着播放行的高度走：播放行多高，它就往上让多少。
+  const playerEl = $('player')
+  const playerH = playerEl.style.display === 'none' ? 0 : playerEl.getBoundingClientRect().height
+  $('scene-caption').style.bottom = `${78 + playerH}px`
+
   scene?.setViewInset(top, bottom)
 }
 
@@ -700,12 +708,15 @@ function updateCaption(onScene: boolean) {
   const text = $<HTMLTextAreaElement>('problem-text').value.trim().replace(/\s+/g, ' ')
   if (!onScene || !text) {
     cap.style.display = 'none'
+    syncViewInset() // 题面这块没了，底部的让位要跟着收回去
     return
   }
   cap.style.display = 'block'
   const short = text.length > 40 ? `${text.slice(0, 40)}…` : text
   const 去哪 = currentSolution ? '看解题过程' : '改题面'
   cap.textContent = `${short}　▸ ${去哪}`
+  // 题面长短不一，高度也就不同 —— 重算一次让位，免得它压住上面那块
+  syncViewInset()
 }
 
 let statusTimer: number | undefined
@@ -1697,6 +1708,9 @@ function setStep(i: number): void {
   if (!sol) return
   stepIndex = i < 0 ? -1 : Math.min(i, sol.steps.length - 1)
   applyStep()
+  // 切步骤时底部那两块文字会变高变矮（步骤说明有长有短），
+  // 所以要让位重算一次，题面那块才会跟着挪开、不叠在一起。
+  syncViewInset()
 }
 
 function stopPlay(): void {
