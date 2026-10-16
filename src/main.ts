@@ -1890,7 +1890,7 @@ function afterPick(): void {
  * - **坐标系法**：蓝色的三个坐标轴（frame 里的原点 + 三个轴上点），
  *   并且**把点的坐标标出来** —— 坐标是程序自己算的，不让模型报（它能报错，我们算不会）
  */
-function methodArrows(): { from: string; to: string; color: 'yellow' | 'blue'; label?: string }[] {
+function methodArrows(): { from: string; to: string; color: 'yellow' | 'blue'; label?: string; extend?: number }[] {
   const sol = currentSolution
   if (!sol) return []
   if (viaPick === '坐标系法') {
@@ -1898,10 +1898,13 @@ function methodArrows(): { from: string; to: string; color: 'yellow' | 'blue'; l
     if (!f) return []
     // 空间直角坐标系：从原点出发的三条轴，都用蓝色，**各自标上 x / y / z** ——
     // 不标的话看图的人根本分不出哪条是哪条。
+    // **延长到 1.7 倍**：三个轴上取的点本来就在图形自己的顶点上（A、B、D、A₁），
+    // 不延长的话箭头正好停在那些点上、和原点标注糊成一片，也看不出轴伸到哪里。
+    const EXT = 1.7
     return [
-      { from: f.origin, to: f.x, color: 'blue' as const, label: 'x' },
-      { from: f.origin, to: f.y, color: 'blue' as const, label: 'y' },
-      { from: f.origin, to: f.z, color: 'blue' as const, label: 'z' },
+      { from: f.origin, to: f.x, color: 'blue' as const, label: 'x', extend: EXT },
+      { from: f.origin, to: f.y, color: 'blue' as const, label: 'y', extend: EXT },
+      { from: f.origin, to: f.z, color: 'blue' as const, label: 'z', extend: EXT },
     ]
   }
   const all = sol.arrows ?? []

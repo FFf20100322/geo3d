@@ -52,7 +52,7 @@ export interface Scene3d {
    * 画/清掉带箭头的矢量。三种解题法共用：
    * 向量法是黄色的向量，基底法与坐标系法是蓝色的基底与坐标轴。
    */
-  setArrows(list: { from: string; to: string; color: 'yellow' | 'blue' }[]): void
+  setArrows(list: { from: string; to: string; color: 'yellow' | 'blue'; label?: string; extend?: number }[]): void
   /** 允许被手指抓住的点。命中判定用实时坐标，所以拖完之后不用重新登记。 */
   setGrabbables(names: string[]): void
   /**
@@ -329,7 +329,7 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
   /** 箭头尖端的字（坐标轴的 x/y/z），跟着模型一起转，所以挂在 group 下 */
   let arrowLabels: CSS2DObject[] = []
 
-  function setArrows(list: { from: string; to: string; color: 'yellow' | 'blue'; label?: string }[]): void {
+  function setArrows(list: { from: string; to: string; color: 'yellow' | 'blue'; label?: string; extend?: number }[]): void {
     // 每次重建最省事：箭头数量很少（顶多几个），而增量更新要维护一堆映射关系，
     // 那是给几百个对象准备的复杂度，这里用不上。
     for (const a of [...arrowGroup.children]) arrowGroup.remove(a)
@@ -340,8 +340,12 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
       const b = positions[item.to]
       if (!a || !b) continue
       const dir = new THREE.Vector3(b[0] - a[0], b[1] - a[1], b[2] - a[2])
-      const len = dir.length()
-      if (len < 1e-9) continue
+      // extend：把箭头**伸出去一截**。坐标轴必须这么做 ——
+      // 三个轴上取的点本来就是图形自己的顶点（比如 A、B、D、A₁），
+      // 不延长的话箭头正好停在那些点上，和原点标注糊在一起，也看不出轴伸到哪儿。
+      const dirLen = dir.length()
+      const len = dirLen * (item.extend ?? 1)
+      if (dirLen < 1e-9) continue
       // 箭头只在尖端一点点就够 —— 能看出方向即可。
       // 一开始按长度的 28% 做，真机上箭头快赶上杆子长了，像一支飞镖。
       const head = len * 0.09
@@ -362,7 +366,9 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
         el.className = 'axis-label'
         el.textContent = item.label
         const obj = new CSS2DObject(el)
-        obj.position.set(b[0], b[1], b[2])
+        // 字要放在**箭头的实际尖端**（可能被 extend 延长过），不是原来那个点上
+        const unit = dir.clone().normalize()
+        obj.position.set(a[0] + unit.x * len, a[1] + unit.y * len, a[2] + unit.z * len)
         group.add(obj)
         arrowLabels.push(obj)
       }
