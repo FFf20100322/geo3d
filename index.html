@@ -73,6 +73,8 @@
          收起之后全页只剩这一行。 */
       #labels .axis-label { color: #7fb0ff; font-size: 14px; font-weight: 700; font-style: italic; text-shadow: 0 0 3px #000, 0 0 6px #000; }
       #footline { position: fixed; left: 12px; right: 12px; bottom: 8px; z-index: 15; display: none; align-items: center; gap: 10px; font-size: 12px; color: #8b95a5; }
+      /* 坐标系的「为什么这么建系」：贴在解法标签下面的一行小字，不做成框 */
+      #framenote { position: fixed; left: 12px; right: 12px; z-index: 16; display: none; font-size: 12.5px; line-height: 1.45; color: #7fb0ff; background: rgba(16,22,32,.82); border-left: 2px solid #2f6fed; padding: 5px 9px; border-radius: 0 8px 8px 0; }
       #footline #foot-fold { flex: none; padding: 0; border: 0; background: none; color: #8b95a5; font-size: 12px; text-decoration: underline; text-underline-offset: 3px; }
       #footline #hint { flex: 1 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
       #scene-caption { position: fixed; left: 12px; right: 12px; bottom: 32px; z-index: 15; display: none; padding: 8px 12px; border-radius: 10px; background: rgba(20,26,34,.86); border: 1px solid #2b3442; font-size: 13px; color: #cbd5e1; cursor: pointer; }
@@ -350,6 +352,8 @@
     </div>
     <!-- 问与解法的切换按钮。只有「一问多解」的题才会出现内容，别的题这里是空的。 -->
     <div id="qsel"></div>
+    <!-- 坐标系法的「为什么这么建系」。只有选到坐标系法、且解答里给了理由时才出现。 -->
+    <div id="framenote"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

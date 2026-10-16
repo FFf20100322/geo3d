@@ -68,8 +68,12 @@ export interface Solution {
    * 坐标系法的空间直角坐标系：原点 + 三个轴上的单位点。
    * 给了它，程序就能**自己算出每个点的坐标**，不必让模型逐个报坐标
    * （模型报坐标容易错，而我们本来就有坐标 —— 自己算是免费的）。
+   *
+   * `note` 是**为什么这么建系**的一句话。用户明确要求能看懂系统的选择：
+   * 只说「以 A 为原点」不够，要说清「因为 AB、AD、AA₁ 两两垂直且交于 A，
+   * 三条棱直接当坐标轴，不用做任何辅助线」—— 那才是「最简」的理由。
    */
-  frame?: { origin: string; x: string; y: string; z: string }
+  frame?: { origin: string; x: string; y: string; z: string; note?: string }
   /** 这道题涉及、需要画弧标注的角度 */
   angles: AngleSpec[]
   /** 需要在线段上标出来的长度 */
@@ -289,7 +293,7 @@ export function parseSolution(raw: unknown, scene: Scene): Solution {
     return { from, to, label, color }
   })
 
-  let frame: { origin: string; x: string; y: string; z: string } | undefined
+  let frame: { origin: string; x: string; y: string; z: string; note?: string } | undefined
   if (raw.frame !== undefined) {
     if (!isObj(raw.frame)) throw new SolutionError('frame 不是一个对象')
     frame = {
@@ -297,6 +301,8 @@ export function parseSolution(raw: unknown, scene: Scene): Solution {
       x: ref(raw.frame.x, 'x 轴上的点'),
       y: ref(raw.frame.y, 'y 轴上的点'),
       z: ref(raw.frame.z, 'z 轴上的点'),
+      // 为什么这么建系。缺了也能跑，但用户就看不到系统的选择了。
+      note: typeof raw.frame.note === 'string' ? readable(raw.frame.note) : undefined,
     }
   }
 

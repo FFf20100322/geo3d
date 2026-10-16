@@ -405,7 +405,13 @@ export const FULL_SOLUTION = {
     { from: 'A', to: 'D', label: 'AD', color: 'blue' },
     { from: 'A', to: 'A1', label: 'AA₁', color: 'blue' },
   ],
-  frame: { origin: 'A', x: 'B', y: 'D', z: 'A1' },
+  frame: {
+    origin: 'A',
+    x: 'B',
+    y: 'D',
+    z: 'A1',
+    note: '以 A 为原点、三条棱 AB、AD、AA₁ 分别作 x、y、z 轴：它们两两垂直且交于 A，正方体的每条棱都平行于其中一条，所以所有顶点的坐标都是整数，不用做任何辅助线。',
+  },
   angles: [
     { kind: 'lineLine', p: ['A1', 'B'], q: ['B1', 'C'], label: 'A₁B 与 B₁C 所成角', value: '60°', of: 'degrees' },
     { kind: 'dihedral', edge: ['B', 'D'], inA: 'A1', inB: 'A', label: '二面角 A₁-BD-A', value: '√3/3', of: 'cos' },
