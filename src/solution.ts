@@ -322,7 +322,16 @@ export function mergeSolution(scene: Scene, solution: Solution): Scene {
     }
     for (const e of step.addEdges) if (!edges.some((x) => x[0] === e[0] && x[1] === e[1])) edges.push(e)
   }
-  return { points, edges, faces: scene.faces, constraints: scene.constraints }
+  // **一定要先把原场景展开**。
+  //
+  // 这里踩过一次，而且一次害了两个功能：原来写的是
+  //   return { points, edges, faces: scene.faces, constraints: scene.constraints }
+  // 只挑了四个字段，**把 solids 和 variants 悄悄丢了** ——
+  // 后果是曲面立体画不出来、每问独有的条件在「记住图形」之后失效，
+  // 而且**两处都不报错**，只是东西不见了，最难查。
+  //
+  // 以后往 Scene 上加字段时，这里不用改，因为已经展开了。
+  return { ...scene, points, edges, faces: scene.faces, constraints: scene.constraints }
 }
 
 export interface StepPositions {

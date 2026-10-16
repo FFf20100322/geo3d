@@ -44,7 +44,7 @@ import {
   REALFLOW_PROBLEM,
 } from './demo'
 // 【临时测试】用完就删：temptest.ts，连同本文件里所有 temptest 分支与那两条列表项一起删
-import { T1_PROBLEM, T1_SCENE, T2_PROBLEM, T2_SCENE, T2_SOLUTION } from './temptest'
+import { T1_PROBLEM, T1_SCENE, T1_SOLUTION, T2_PROBLEM, T2_SCENE, T2_SOLUTION } from './temptest'
 import {
   checkFacesPlanar,
   edgeKey,
@@ -1163,7 +1163,7 @@ function loadBuiltinDemo(which: 'tetra' | 'cube' | 'fold' | 't1' | 't2' = 'tetra
       : which === 'fold'
         ? [FOLD_PROBLEM, FOLD_SCENE, FOLD_SOLUTION]
         : which === 't1'
-          ? [T1_PROBLEM, T1_SCENE, { steps: [], answers: [], angles: [], lengths: [] }]
+          ? [T1_PROBLEM, T1_SCENE, T1_SOLUTION]
           : which === 't2'
             ? [T2_PROBLEM, T2_SCENE, T2_SOLUTION]
             : [DEMO_PROBLEM, DEMO_SCENE, DEMO_SOLUTION]
@@ -2046,11 +2046,16 @@ function methodArrows(): { from: string; to: string; color: 'yellow' | 'blue'; l
   }
   const all = sol.arrows ?? []
   const pick = (a: { color?: 'yellow' | 'blue' }) => a.color ?? 'yellow'
+  // **不给向量加文字标签。**
+  // 一开始给每个向量都标了名字（EF、EA₁、AB…），结果在手机上撞得一塌糊涂：
+  // 点名字本来就在图上，箭头文字纯属重复；而箭头为了避开棱被错开了一点，
+  // 文字就正好落到旁边的点上，出现「两个 A₁」「AB 压住 B」这种。
+  // 坐标轴的 x / y / z 要留（不标就分不出哪条是哪条），向量的名字不标 —— 图上已经有了。
   if (viaPick === '向量法')
-    return all.filter((a) => pick(a) === 'yellow').map((a) => ({ from: a.from, to: a.to, color: 'yellow' as const, label: a.label }))
+    return all.filter((a) => pick(a) === 'yellow').map((a) => ({ from: a.from, to: a.to, color: 'yellow' as const }))
   if (viaPick === '基底法')
-    return all.filter((a) => a.color === 'blue').map((a) => ({ from: a.from, to: a.to, color: 'blue' as const, label: a.label }))
-  return all.map((a) => ({ from: a.from, to: a.to, color: pick(a), label: a.label }))
+    return all.filter((a) => a.color === 'blue').map((a) => ({ from: a.from, to: a.to, color: 'blue' as const }))
+  return all.map((a) => ({ from: a.from, to: a.to, color: pick(a) }))
 }
 
 /**
