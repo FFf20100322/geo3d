@@ -295,11 +295,18 @@ export async function solveProblem(
   extra: string,
   points: string[],
   effort: 'low' | 'high' | 'max',
+  /**
+   * 指定用哪种解法重算（'向量法' / '坐标系法' / '基底法'）。
+   * 用户在 3D 页切换解法时走这条路 —— **图形不重建，只重推解题过程**，
+   * 所以已有的场景、点、约束都接着用（这就是「调用已经算过的内容」）。
+   */
+  method?: string,
 ): Promise<unknown> {
   const ask = [
     `题目：\n${problemText}`,
     extra.trim() ? `另外补充或更正的条件（以这部分为准）：\n${extra}` : '',
     `图中已有的点：${points.join('、')}\n只能引用这些点，或者你在前面步骤里新画出来的点。`,
+    method ? `**这一次必须用「${method}」来做**，每一步的 via 都写 "${method}"。` : '',
   ]
     .filter(Boolean)
     .join('\n\n')

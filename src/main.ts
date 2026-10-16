@@ -1615,7 +1615,7 @@ function renderSolution(sol: Solution): void {
   })
 }
 
-async function generateSolution(btn: HTMLButtonElement): Promise<void> {
+async function generateSolution(btn: HTMLButtonElement, method?: string): Promise<void> {
   const problemText = $<HTMLTextAreaElement>('problem-text').value.trim()
   const extra = $<HTMLTextAreaElement>('extra').value
   const base = currentScene
@@ -1630,7 +1630,7 @@ async function generateSolution(btn: HTMLButtonElement): Promise<void> {
       try {
         say(`正在推理解题过程（推理档 ${effort}）…`)
         setProgress(30 + i * 25, `第 ${i + 1} 次尝试推理解题（推理档 ${effort}）…`)
-        const raw = await solveProblem(problemText, extra, points, effort)
+        const raw = await solveProblem(problemText, extra, points, effort, method)
 
         if (raw && typeof raw === 'object' && typeof (raw as { unsupported?: unknown }).unsupported === 'string') {
           throw new Error(`模型说这一步表达不了：${(raw as { unsupported: string }).unsupported}`)
@@ -1864,10 +1864,19 @@ function afterPick(): void {
   stepIndex = -1
   stopPlay()
   renderQSel()
-  renderQSel()
   refreshAnnotations()
   applyStep()
   syncViewInset()
+
+  // 选了「解法」而手上这份解答里没有这种解法 → **按这种解法重算一遍**。
+  // 只重推解题过程，**图形不重建** —— 场景、点、约束都接着用，
+  // 这就是用户说的「可以调用已经算过的内容」。
+  const sol = currentSolution
+  if (viaPick && sol && !sol.steps.some((s) => s.via === viaPick)) {
+    const btn = $<HTMLButtonElement>('btn-generate')
+    say(`正在用「${viaPick}」重算一遍解题过程…`)
+    void generateSolution(btn, viaPick).catch((e) => say(`重算失败：${message(e)}`, 'err'))
+  }
 }
 
 function applyStep(): void {
@@ -1959,7 +1968,7 @@ function stopPlay(): void {
 $('foot-fold').onclick = () => {
   const folded = document.body.classList.toggle('folded')
   $('foot-fold').textContent = folded ? '▼ 展开' : '▲ 收起'
-  $('qsel').style.display = folded ? 'none' : 'flex'
+  // 问/解法的选择器不归这里管，它是独立的一栏 —— 收起只收播放器与题面，选择器照样留着
   syncViewInset()
 }
 
