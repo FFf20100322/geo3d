@@ -1454,15 +1454,34 @@ function compositeFrame(): HTMLCanvasElement | null {
 
   const cbox = src.getBoundingClientRect()
   const want = exportSize(src.width, src.height)
+  // 题面单独在下面留一条。**光有一张 3D 图，别人不知道这是哪道题** ——
+  // 发给老师或同学时，还得再打一遍字说明题意，那张图就没用了。
+  // 题面直接从页面上取：它是单一来源，不用再存一份副本（存了就会有一天对不上）
+  const caption = ($<HTMLTextAreaElement>('problem-text').value || '').trim().replace(/\s+/g, ' ')
+  const capFont = Math.max(14, Math.round(want.w * 0.022))
+  const capLines = caption ? wrapText(caption, 46) : []
+  const capH = capLines.length ? capLines.length * capFont * 1.6 + capFont * 1.4 : 0
+
   const out = document.createElement('canvas')
   out.width = want.w
-  out.height = want.h
+  out.height = want.h + capH
   const ctx = out.getContext('2d')
   if (!ctx) return null
   // 导出的底色用页面那种深色，不然透明底在聊天软件里会变成白底黑字看不清
   ctx.fillStyle = '#0f1319'
   ctx.fillRect(0, 0, out.width, out.height)
-  ctx.drawImage(src, 0, 0, out.width, out.height)
+  ctx.drawImage(src, 0, 0, out.width, want.h)
+
+  if (capLines.length) {
+    ctx.fillStyle = '#e6edf3'
+    ctx.font = `${capFont}px system-ui, -apple-system, "PingFang SC", sans-serif`
+    ctx.textAlign = 'left'
+    ctx.textBaseline = 'top'
+    const pad = capFont * 0.9
+    capLines.forEach((line, i) => {
+      ctx.fillText(line, pad, want.h + pad * 0.5 + i * capFont * 1.6)
+    })
+  }
 
   const spots = [...labels.querySelectorAll('div')].map((el) => {
     const r = el.getBoundingClientRect()
@@ -1488,6 +1507,18 @@ function compositeFrame(): HTMLCanvasElement | null {
     ctx.fillStyle = l.color
     ctx.fillText(l.text, l.x, l.y)
   }
+  return out
+}
+
+/**
+ * 按字数折行。中文按**字数**折就行（等宽感强），不必按像素宽度量 ——
+ * 那是给英文准备的复杂度，这里用不上。
+ */
+function wrapText(s: string, perLine: number): string[] {
+  const out: string[] = []
+  // 最多三行：再多就把图挤得没地方了，看不完的部分本来也该在软件里看
+  for (let i = 0; i < s.length && out.length < 3; i += perLine) out.push(s.slice(i, i + perLine))
+  if (out.length === 3 && s.length > perLine * 3) out[2] = out[2].slice(0, perLine - 1) + '…'
   return out
 }
 
@@ -2562,7 +2593,11 @@ function applyStep(): void {
     label.textContent = '全部'
     text.textContent = filtered
       ? `当前只看这一组（${sol.steps.length} 步）用到的东西。点上面的标签可以换问或换解法。`
-      : '已显示全部辅助线。拖上面的滑杆或点「播放」，可以按解题步骤一条条看它们是怎么画出来的。'
+      // 这句话原来写了两行（「已显示全部辅助线。拖上面的滑杆或点「播放」，
+      // 可以按解题步骤一条条看它们是怎么画出来的。」）—— 内容没错，但**太占地方**：
+      // 手机上底部本来就堆了题面、播放器、滑杆、提示好几行，说明文字再占两行，
+      // 留给图形的地方就被挤掉一块。改成一句短的，意思一点没少。
+      : '拖滑杆或点「播放」，看辅助线一条条画出来。'
     return
   }
 
