@@ -202,8 +202,7 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
     for (const e of r.edges) {
       const geo = new THREE.BufferGeometry().setFromPoints([v3(e.a), v3(e.b)])
       const line = new THREE.LineSegments(geo, e.aux ? matAux : matEdge)
-      // 距离信息一律算好，这样将来任何一条棱要换成虚线材质都不用再补这一步
-      line.computeLineDistances()
+      if (e.aux) line.computeLineDistances()
       group.add(line)
       edgeObjects.set(e.key, line)
     }
@@ -281,8 +280,11 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
   }
 
   function setHighlight(hl: Highlight | null) {
-    highlightNow = hl
-    applyEdgeStyles()
+    for (const [key, line] of edgeObjects) {
+      const on = hl?.edges.has(key) ?? false
+      // 高亮的优先于辅助线的绿色，但隐藏状态仍然是隐藏
+      line.material = on ? matHl : auxEdges.has(key) ? matAux : matEdge
+    }
     for (const [name, obj] of vertexObjects) {
       obj.element.classList.toggle('hl', hl?.points.has(name) ?? false)
     }
@@ -292,17 +294,6 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
       const mat = entry.mesh.material as THREE.MeshBasicMaterial
       mat.color.setHex(on ? 0xffd166 : entry.color)
       mat.opacity = on ? 0.46 : 0.22
-    }
-  }
-
-  /** 当前的高亮状态 */
-  let highlightNow: Highlight | null = null
-
-  /** 按「高亮 / 辅助线 / 普通」给每条棱定材质。高亮最优先，其次辅助线的绿色。 */
-  function applyEdgeStyles(): void {
-    for (const [key, line] of edgeObjects) {
-      const on = highlightNow?.edges.has(key) ?? false
-      line.material = on ? matHl : auxEdges.has(key) ? matAux : matEdge
     }
   }
 
