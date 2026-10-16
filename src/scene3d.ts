@@ -354,26 +354,30 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
       const dirLen = dir.length()
       const len = dirLen * (item.extend ?? 1)
       if (dirLen < 1e-9) continue
-      // 箭头只在尖端一点点就够 —— 能看出方向即可。
-      // 一开始按长度的 28% 做，真机上箭头快赶上杆子长了，像一支飞镖。
+      const unit = dir.clone().normalize()
+      // **把箭头从它所依附的那条棱旁边错开一点。**
+      // 基底的三个方向常常正好和图形的棱重合（比如 AB、AD、AA₁ 就是正方体的三条棱），
+      // 不错开的话箭头完全被棱盖住，看上去像没画。
+      // 错开方向取「垂直于箭头、也垂直于视线」—— 这样在屏幕上看起来是**横向平移**，
+      // 不管从哪个角度看都不会盖在棱上。
+      let off = new THREE.Vector3(0, 0, 0)
+      if (lastFit) {
+        const view = camera.position.clone().sub(lastFit.center).normalize()
+        const side = new THREE.Vector3().crossVectors(unit, view)
+        if (side.lengthSq() > 1e-9) off = side.normalize().multiplyScalar(lastFit.radius * 0.045)
+      }
+      const start = new THREE.Vector3(a[0] + off.x, a[1] + off.y, a[2] + off.z)
       const head = len * 0.09
-      const arrow = new THREE.ArrowHelper(
-        dir.clone().normalize(),
-        new THREE.Vector3(a[0], a[1], a[2]),
-        len,
-        ARROW_COLORS[item.color],
-        head,
-        head * 0.55,
-      )
+      const arrow = new THREE.ArrowHelper(unit, start, len, ARROW_COLORS[item.color], head, head * 0.55)
       // 画在图形旁边一点，免得和棱完全重叠、看不出那里有箭头
       arrow.renderOrder = 2
       arrowGroup.add(arrow)
-      // 记下箭头伸到多远，取景要用
+      // 记下箭头伸到多远，取景要用（把错开的量也算上）
       if (lastFit) {
         const c = lastFit.center
-        const tipX = a[0] + dir.clone().normalize().x * len
-        const tipY = a[1] + dir.clone().normalize().y * len
-        const tipZ = a[2] + dir.clone().normalize().z * len
+        const tipX = start.x + unit.x * len
+        const tipY = start.y + unit.y * len
+        const tipZ = start.z + unit.z * len
         arrowReach = Math.max(arrowReach, Math.hypot(tipX - c.x, tipY - c.y, tipZ - c.z))
       }
       // 尖端那个字（坐标轴的 x / y / z）。没有它根本分不出哪条轴是哪条。
@@ -382,9 +386,9 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
         el.className = 'axis-label'
         el.textContent = item.label
         const obj = new CSS2DObject(el)
-        // 字要放在**箭头的实际尖端**（可能被 extend 延长过），不是原来那个点上
-        const unit = dir.clone().normalize()
-        obj.position.set(a[0] + unit.x * len, a[1] + unit.y * len, a[2] + unit.z * len)
+        // 字放在**箭头的实际尖端**：起点已经错开过，长度也可能被 extend 延长过，
+        // 所以要按 start + unit×len 算，不能用原来那个点。
+        obj.position.set(start.x + unit.x * len, start.y + unit.y * len, start.z + unit.z * len)
         group.add(obj)
         arrowLabels.push(obj)
       }

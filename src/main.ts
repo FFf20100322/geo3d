@@ -37,6 +37,7 @@ import {
   FULL_PROBLEM,
   FULL_SCENE,
   FULL_SOLUTION,
+  MOVING_PROBLEM,
   REALFLOW_PROBLEM,
 } from './demo'
 import { checkFacesPlanar, edgeKey, faceKey, parseScene, toRenderable, type Scene } from './scene'
@@ -1207,6 +1208,11 @@ function importedItems(): { title: string; desc: string; run: () => void }[] {
       run: () => loadBuiltinDemo('tetra'),
     },
     {
+      title: '正方体 · 动点 E、F（走真实建模流程）',
+      desc: '内置题目：只有文字，图形与解答让模型现场推。两个问都绕不开动点，用来试三种解题法在拖动时的实时更新。要联网。',
+      run: () => startRealFlow(MOVING_PROBLEM),
+    },
+    {
       title: '正方体：四个问，把功能用满的那道',
       desc: '内置示例：不耗接口、秒开。异面直线角、二面角、线面角、动点距离各一问；辅助点由解答一步步加出来，适合看播放器怎么画线。',
       run: () => loadBuiltinDemo('cube'),
@@ -1215,8 +1221,8 @@ function importedItems(): { title: string; desc: string; run: () => void }[] {
 }
 
 /** 走真实流程的那道测试题：只填题面，不预建场景与解答 */
-function startRealFlow(): void {
-  $<HTMLTextAreaElement>('problem-text').value = REALFLOW_PROBLEM
+function startRealFlow(problem: string = REALFLOW_PROBLEM): void {
+  $<HTMLTextAreaElement>('problem-text').value = problem
   $<HTMLTextAreaElement>('extra').value = ''
   $('points').textContent = ''
   $('uncertain').textContent = ''
