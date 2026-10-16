@@ -737,94 +737,37 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
       const sc = screenOf([tmpWorld.x, tmpWorld.y, tmpWorld.z])
       items.push({ el, x: sc.x, y: sc.y, dx: 0, dy: 0, w: estimateWidth(el.textContent ?? '') })
     }
-    if (items.length < 2 && !items.length) return
 
-    // 点的标注是不可移动的障碍物：用户要求「点标注必须常驻」，
-    // 所以遇到冲突时**让角度/长度标签去躲**，而不是把点藏掉。
-    const fixed: { x: number; y: number; w: number }[] = []
-    for (const [name, obj] of vertexObjects) {
-      const el = labelEls.get(name)
-      if (!el || el.style.display === 'none' || !el.textContent) continue
-      if (el.style.visibility === 'hidden') continue
-      obj.getWorldPosition(tmpWorld)
-      const sc = screenOf([tmpWorld.x, tmpWorld.y, tmpWorld.z])
-      fixed.push({ x: sc.x, y: sc.y, w: 30 })
-    }
-    if (items.length < 2 && !fixed.length) return
+  }
 
-    const H = 28
-    const gap = 6
-    // 候选位置还必须落在可视区里。少了这一条，标注一多就会整片被推到屏幕外 ——
-    // 「全部」档下几十个角，屏幕上只剩一堆被切掉一半的字，等于没标。
-    const cr = renderer.domElement.getBoundingClientRect()
-    const padX = 10
-    const padY = 8
-    const inView = (x: number, y: number, w: number) =>
-      x - w / 2 >= padX && x + w / 2 <= cr.width - padX && y - H / 2 >= padY && y + H / 2 <= cr.height - padY
-    /** 这个位置能不能放下这个标签：在可视区内、不压已占位的、也不压点标注 */
-    const free = (x: number, y: number, w: number, placed: { x: number; y: number; w: number }[]) =>
-      inView(x, y, w) && !placed.some((t) => Math.abs(t.x - x) < (t.w + w) / 2 + gap && Math.abs(t.y - y) < H + gap)
+  /** 图形在屏幕上小于这个像素半径时，标注整体不显示（否则必然糊成一团） */
+  const ANNOT_MIN_PIXELS = 70
 
-    // 确定性放置：每个标签沿着「以锚点为中心的同心环」由近到远找第一个放得下的位置。
-    //
-    // 之前用的是「两两互相推开、迭代若干轮」。标签少的时候能用，标签一多就不收敛、
-    // 会来回震荡（真机上看到六条标注又开始互相压）。换成一放定就不动：
-    // 既稳、又快，而且每个标签都落在离它描述的几何最近的那个可放位置。
-    const placed = fixed.map((f) => ({ x: f.x, y: f.y, w: f.w }))
-    for (const it of items) {
-      let best: { x: number; y: number } | null = null
-      for (let ring = 0; ring < 8 && !best; ring++) {
-        const r = ring * 34
-        const steps = ring === 0 ? 1 : 8
-        for (let k = 0; k < steps; k++) {
-          const ang = (k / steps) * Math.PI * 2 - Math.PI / 2
-          const x = it.x + Math.cos(ang) * r
-          const y = it.y + Math.sin(ang) * r
-          if (free(x, y, it.w, placed)) {
-            best = { x, y }
-            break
-          }
-        }
-      }
-      // 八环之内都放不下就退回锚点：允许它压着，也好过把它甩到看不见的地方
-      if (!best) best = { x: it.x, y: it.y }
-      it.dx = best.x - it.x
-      it.dy = best.y - it.y
-      placed.push({ x: best.x, y: best.y, w: it.w })
-    }
-    for (const it of items) {
-      // 位移必须用 margin，**不能用 style.transform**：
-      // CSS2DRenderer 每帧都会把 transform 重设成「居中 + 锚点位置」，
-      // 附加在后面的位移下一帧就被抹掉 —— 表现是「算出来排好了、画面上根本没动」。
-      // margin 它不碰，所以能稳稳地把标签挪开。
-      it.el.style.marginLeft = `${it.dx.toFixed(1)}px`
-      it.el.style.marginTop = `${it.dy.toFixed(1)}px`
-    }
-
-    // 排完之后自己查一遍：还有几对标签是压着的？查不到就是排得干净。
-    let overlaps = 0
-    let worst = ''
-    for (let i = 0; i < items.length; i++) {
-      for (let j = i + 1; j < items.length; j++) {
-        const a = items[i]
-        const b = items[j]
-        const ax = a.x + a.dx
-        const ay = a.y + a.dy
-        const bx = b.x + b.dx
-        const by = b.y + b.dy
-        if (Math.abs(ax - bx) < (a.w + b.w) / 2 && Math.abs(ay - by) < H) {
-          overlaps++
-          if (!worst) worst = `${(a.el.textContent ?? '').slice(0, 6)} 与 ${(b.el.textContent ?? '').slice(0, 6)}`
-        }
-      }
-    }
-    labelProblems = overlaps ? [`有 ${overlaps} 对标注压在一起（${worst}）`] : []
+  /**
+   * 缩得太小时把标注整体藏起来，**任何档位都一样**。
+   *
+   * 为什么要有这条：标注贴着面摆（不做避让）之后，图形一小就必然挤在一起 ——
+   * 那是无解的，屏幕上没有那么多地方。与其让它糊成一团，不如干脆不显示：
+   * 缩到那个程度，用户本来也是在找位置，不是在看具体某个角。
+   */
+  function syncAnnotVisibility(): void {
+    if (!lastFit) return
+    const c = lastFit.center
+    const p0 = new THREE.Vector3(c.x, c.y, c.z).project(camera)
+    // 沿相机的「上」方向挪一个半径，量两点在屏幕上的像素距离
+    const up = camera.up.clone().normalize().multiplyScalar(lastFit.radius)
+    const p1 = new THREE.Vector3(c.x + up.x, c.y + up.y, c.z + up.z).project(camera)
+    const r = renderer.domElement.getBoundingClientRect()
+    const pixels = Math.hypot((p1.x - p0.x) * r.width, (p1.y - p0.y) * r.height) / 2
+    annotGroup.visible = pixels >= ANNOT_MIN_PIXELS
   }
 
   const loop = () => {
     controls.update()
     renderer.render(scene, camera)
     labelRenderer.render(scene, camera)
+    // 标注会不会糊成一团是跟着缩放变的，所以每帧看一眼
+    syncAnnotVisibility()
     // 标注的摆放不每帧算：用户要求拖动/旋转过程中不要实时重排，停手之后算一次就行。
     // 这样转起来顺，也不会看到标注在转动过程中乱跳。
     if (labelsDirty) {
