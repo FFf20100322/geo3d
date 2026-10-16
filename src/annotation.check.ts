@@ -8,11 +8,15 @@ import {
   enumerateAngles,
   isRightAngle,
   pointNamesOf,
+  selectImportant,
   setCentroid,
   suggestRadius,
   type AngleSpec,
 } from './annotation.ts'
+import { solve } from './solver.ts'
 import type { Vec3 } from './solver.ts'
+import { parseScene, toRenderable } from './scene.ts'
+import { DEMO_SCENE } from './demo.ts'
 
 /** 给枚举结果做去重键，用来验证「没有重复」 */
 function angleKeyOf(spec: AngleSpec): string {
@@ -330,6 +334,18 @@ console.log('\n【角度重要性打分：决定「重要」档显示哪几个�
   // 棱的两个端点写反了也该认出来 —— 题面写 P-CD-A，程序里可能是 edge:['D','C']
   ok('棱的端点写反也算点过名', angleImportance(flipped, 54.74, text) === s1, `${angleImportance(flipped, 54.74, text)}`)
 
+  // 真机上踩过的那个：枚举出来的二面角里 inA / inB 谁是谁，取决于两个面在列表里的先后。
+  // 题面写「二面角 P-CD-A」，程序可能生成 {inA:'A', inB:'P'} —— 那时候四种写法必须都试，
+  // 否则这个角进不了「重要」档，而它恰恰是题目问的那个。
+  const swappedFaces: AngleSpec = { kind: 'dihedral', edge: ['C', 'D'], inA: 'A', inB: 'P' }
+  ok(
+    '面的两个端点互换也算点过名',
+    angleMentionedInText(swappedFaces, text),
+    `inA/inB 反过来的那种写法`,
+  )
+  const swappedBoth: AngleSpec = { kind: 'dihedral', edge: ['D', 'C'], inA: 'A', inB: 'P' }
+  ok('棱和面同时写反也算点过名', angleMentionedInText(swappedBoth, text))
+
   const lp: AngleSpec = { kind: 'linePlane', line: ['P', 'A'], plane: ['A', 'B', 'C'] }
   ok('线面角也能认出题面点了名', angleImportance(lp, 45, text) > 40, `${angleImportance(lp, 45, text)}`)
 
@@ -358,6 +374,47 @@ console.log('\n【角度重要性打分：决定「重要」档显示哪几个�
   ok('线线角认得出它涉及哪些点', pointNamesOf(lline).join(',') === 'P,A,B', pointNamesOf(lline).join(','))
   const lplane: AngleSpec = { kind: 'linePlane', line: ['P', 'A'], plane: ['A', 'B', 'C'] }
   ok('线面角认得出它涉及哪些点', pointNamesOf(lplane).join(',') === 'P,A,A,B,C', pointNamesOf(lplane).join(','))
+}
+
+console.log('\n【端到端：题面问的那个二面角，必须进得了「重要」档】')
+{
+  // 这一条是从真机上一个查了很久的 bug 反推出来的：
+  // 题面明明写了「二面角 P-CD-A」，程序却判定它没被点名 ——
+  // 因为枚举出来的 inA / inB 谁是谁取决于两个面在列表里的先后，可能生成 A-CD-P。
+  // 而这段挑选逻辑原来跟着界面代码走，只能靠真机上一张张截图看，没法单独测。
+  // 现在它抽成了 selectImportant 纯函数，于是可以这样整条链路跑一遍。
+  const parsed = parseScene(DEMO_SCENE)
+  const solved = solve(parsed.points, parsed.constraints)
+  ok('内置示例场景能解出来', solved.ok, solved.ok ? '' : `最大残差 ${solved.maxError}`)
+  if (solved.ok) {
+    const r = toRenderable(parsed, solved.points)
+    // 边的名字在 key 里（形如 "A|B"），面的顶点名在 names 里
+    const edges: [string, string][] = r.edges.map((e) => e.key.split('|') as [string, string])
+    const faces = r.faces.map((f) => f.names)
+    const specs = enumerateAngles(edges, faces)
+    ok('枚举出了角', specs.length > 0, `${specs.length} 个`)
+
+    const dihedrals = specs.filter((s) => s.kind === 'dihedral')
+    ok('枚举出了二面角', dihedrals.length > 0, `${dihedrals.length} 个`)
+
+    // 挑一个二面角，按它的真实端点拼出题面里那种写法（故意把 inA/inB 的顺序反过来写）
+    const d = dihedrals[0] as Extract<AngleSpec, { kind: 'dihedral' }>
+    const text = `在立体图形中，求二面角 ${d.inB}-${d.edge[0]}${d.edge[1]}-${d.inA} 的余弦值`
+    // buildAnnotation 要的是一个「按点名取坐标」的函数，不是一个坐标表
+    const lookup = (name: string) => solved.points[name]
+    const items = specs.map((s) => {
+      const a = buildAnnotation(s, lookup, 0.3, 'degrees')
+      return {
+        kind: s.kind,
+        degrees: a?.degrees ?? 0,
+        named: angleMentionedInText(s, text),
+        score: a ? angleImportance(s, a.degrees, text) : 0,
+      }
+    })
+    const picked = selectImportant(items, 8)
+    const pickedDihedral = [...picked].some((i) => items[i].kind === 'dihedral')
+    ok('题面问的那个二面角被选进了「重要」档', pickedDihedral, `选中 ${picked.size} 条`)
+  }
 }
 
 console.log(`\n${failed === 0 ? '✓ 全部通过' : `✗ ${failed} 项未通过`}`)

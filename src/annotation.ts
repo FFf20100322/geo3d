@@ -578,7 +578,18 @@ export function angleMentionedInText(spec: AngleSpec, text: string): boolean {
   }
   if (spec.kind === 'dihedral') {
     const [a, b] = spec.edge
-    const forms = [`${spec.inA}-${a}${b}-${spec.inB}`, `${spec.inA}-${b}${a}-${spec.inB}`]
+    // **四种写法都要试。**
+    // 枚举出来的二面角里，inA / inB 哪个是哪个，取决于两个面在列表里的先后顺序 ——
+    // 同一道题可能生成 A-CD-P，而题面写的是 P-CD-A。
+    // 只试「棱的两种写法」是不够的：真机上就因为这个，
+    // 题面里明明写了「二面角 P-CD-A」，程序却判定它没被点名，
+    // 于是这个角进不了「重要」档 —— 而它恰恰是题目问的那个。
+    const forms = [
+      `${spec.inA}-${a}${b}-${spec.inB}`,
+      `${spec.inA}-${b}${a}-${spec.inB}`,
+      `${spec.inB}-${a}${b}-${spec.inA}`,
+      `${spec.inB}-${b}${a}-${spec.inA}`,
+    ]
     return forms.some((f) => t.includes(f))
   }
   // 线面角：题面得**明确说的是这条线与某个平面所成的角**。
@@ -616,6 +627,46 @@ export function angleImportance(spec: AngleSpec, degrees: number, problemText: s
   if (!isRightAngle(degrees) && Math.abs(degrees - Math.round(degrees)) < 0.005) score += 10
 
   return score
+}
+
+/**
+ * 从枚举出来的角里挑出该进「重要」档的那些，返回它们在数组里的下标。
+ *
+ * 挑法分两轮：
+ * 1. **题面点过名的必上** —— 题目问的一定要出现，哪怕它分数不如别人高。
+ *    真机上踩过：四个 45° 的线面角分数一样高、把名额占满，
+ *    结果题面真正问的「二面角 P-CD-A」反而进不来。
+ * 2. 剩下的名额按分数补。
+ *
+ * **两轮都要去重**（`类别|度数` 相同只留一个）：图上有四个侧面，
+ * 就会出现四个长得一模一样的「某某与底面所成角 = 45°」，全标出来只是白占地方。
+ *
+ * 这段逻辑原来写在 main.ts 里，跟着界面一起。抽出来是因为它够复杂、
+ * 又出过一个查了很久的 bug（题面写 P-CD-A、程序生成 A-CD-P），
+ * 放在界面代码里就没法单独测 —— 只能靠真机上一张一张截图看，那种查法太低效。
+ */
+export function selectImportant(
+  items: { kind: string; degrees: number; named: boolean; score: number }[],
+  cap: number,
+): Set<number> {
+  const key = (x: { kind: string; degrees: number }) => `${x.kind}|${x.degrees.toFixed(1)}`
+  const picked = new Set<number>()
+  const seen = new Set<string>()
+  let room = Math.max(0, cap)
+
+  items.forEach((it, i) => {
+    if (!it.named || room <= 0 || seen.has(key(it))) return
+    seen.add(key(it))
+    picked.add(i)
+    room--
+  })
+  items.forEach((it, i) => {
+    if (picked.has(i) || room <= 0 || seen.has(key(it)) || it.score <= 0) return
+    seen.add(key(it))
+    picked.add(i)
+    room--
+  })
+  return picked
 }
 
 /** 从场景与坐标里算出半径该取多大 —— 太小看不见，太大压到别的元素 */

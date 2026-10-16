@@ -23,6 +23,7 @@ import {
   buildLength,
   buildRatio,
   enumerateAngles,
+  selectImportant,
   setCentroid,
   suggestRadius,
   type AngleSpec,
@@ -246,33 +247,7 @@ function refreshAnnotations(): void {
     // 免得模型报得多的时候又挤满。
     const IMPORTANT_CAP = 8
     const alreadyImportant = currentAnnotations.filter((x) => x.tier === 1).length
-    let room = Math.max(0, IMPORTANT_CAP - alreadyImportant)
-
-    // 先放**题面点过名的**：题目问的一定要出现，哪怕它分数不如别人高。
-    // 真机上踩过：四个 45° 的线面角分数一样高，把名额占满，
-    // 结果题面真正点名的「二面角 P-CD-A」反而没进来。
-    //
-    // 点名这一批**同样要去重**：图上有四个侧面，题面说「PA 与底面所成角」时
-    // 判据可能连带把 PB、PC、PD 也算进来，不在这里去重就又会挤满。
-    const picked = new Set<number>()
-    const seenKind = new Set<string>()
-    const kindKey = (x: { kind: string; degrees: number }) => `${x.kind}|${x.degrees.toFixed(1)}`
-    secondTier.forEach((item, i) => {
-      if (!item.named || room <= 0) return
-      if (seenKind.has(kindKey(item))) return
-      seenKind.add(kindKey(item))
-      picked.add(i)
-      room--
-    })
-
-    // 剩下的名额按分数补，同样**同类同值的角只留一个**
-    secondTier.forEach((item, i) => {
-      if (picked.has(i) || room <= 0) return
-      if (seenKind.has(kindKey(item)) || item.score <= 0) return
-      seenKind.add(kindKey(item))
-      picked.add(i)
-      room--
-    })
+    const picked = selectImportant(secondTier, Math.max(0, IMPORTANT_CAP - alreadyImportant))
 
     secondTier.forEach((item, i) => {
       currentAnnotations.push({ shape: item.shape, kind: item.kind, tier: picked.has(i) ? 1 : 2 })
