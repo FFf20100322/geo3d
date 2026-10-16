@@ -1,10 +1,13 @@
 import {
   arcShape,
+  angleImportance,
+  angleMentionedInText,
   buildAnnotation,
   buildLength,
   buildRatio,
   enumerateAngles,
   isRightAngle,
+  pointNamesOf,
   setCentroid,
   suggestRadius,
   type AngleSpec,
@@ -312,6 +315,49 @@ console.log('\n【比例标注：由点的定义直接推，不需要模型】')
   ok('自由点不标比例', buildRatio({ name: 'A', kind: 'free' }, at, R) === null)
   ok('垂足不标比例', buildRatio({ name: 'A', kind: 'perpFoot', of: ['B', 'C', 'D', 'A1'] }, at, R) === null)
   ok('引用了不存在的端点时返回 null', buildRatio({ name: 'A1', kind: 'midpoint', of: ['A', 'ZZ'] }, at, R) === null)
+}
+
+console.log('\n【角度重要性打分：决定「重要」档显示哪几个】')
+{
+  const text = '在正四棱锥 P-ABCD 中，求二面角 P-CD-A 的余弦值，并求 PA 与底面 ABCD 所成角'
+  const named: AngleSpec = { kind: 'dihedral', edge: ['C', 'D'], inA: 'P', inB: 'A' }
+  const flipped: AngleSpec = { kind: 'dihedral', edge: ['D', 'C'], inA: 'P', inB: 'A' }
+  const plain: AngleSpec = { kind: 'dihedral', edge: ['A', 'B'], inA: 'P', inB: 'C' }
+
+  const s1 = angleImportance(named, 54.74, text)
+  const s2 = angleImportance(plain, 54.74, text)
+  ok('题面里点过名的角得分高得多', s1 > s2 + 20, `点名的 ${s1} vs 没点名的 ${s2}`)
+  // 棱的两个端点写反了也该认出来 —— 题面写 P-CD-A，程序里可能是 edge:['D','C']
+  ok('棱的端点写反也算点过名', angleImportance(flipped, 54.74, text) === s1, `${angleImportance(flipped, 54.74, text)}`)
+
+  const lp: AngleSpec = { kind: 'linePlane', line: ['P', 'A'], plane: ['A', 'B', 'C'] }
+  ok('线面角也能认出题面点了名', angleImportance(lp, 45, text) > 40, `${angleImportance(lp, 45, text)}`)
+
+  // 真机上踩过：判据太宽的话，题面里只要出现「底面」+ 某条侧棱的名字，
+  // 四条侧棱的线面角就全算「点名」，把「重要」档的名额占满，
+  // 结果题面真正问的那个二面角反而进不来。
+  const notAsked: AngleSpec = { kind: 'linePlane', line: ['P', 'B'], plane: ['A', 'B', 'C'] }
+  ok('题面没问的那条侧棱不算点名', !angleMentionedInText(notAsked, text))
+  ok('题面问的那条侧棱算点名', angleMentionedInText(lp, text))
+
+  // 线线角的 p、q 都是「顶点 + 另一个点」，顶点写第一个 —— 这是 enumerateAngles 的约定
+  const ll: AngleSpec = { kind: 'lineLine', p: ['P', 'A'], q: ['P', 'B'] }
+  ok('线线角要题面写了 ∠ 记号才算', angleImportance(ll, 37.42, '求 ∠APB 的大小') === 40, `${angleImportance(ll, 37.42, '求 ∠APB 的大小')}`)
+  ok(
+    '线线角只是点名出现不算（避免误命中）',
+    angleImportance(ll, 37.42, '在四面体 PABC 中') === 0,
+    `${angleImportance(ll, 37.42, '在四面体 PABC 中')}`,
+  )
+
+  ok('直角会加分', angleImportance(plain, 90, '') > angleImportance(plain, 87.3, ''))
+  ok('60° 比 61° 得分高', angleImportance(plain, 60, '') > angleImportance(plain, 61, ''))
+  ok('整数度数比带小数的得分高', angleImportance(plain, 37, '') > angleImportance(plain, 37.42, ''))
+  ok('跟题面无关又不好看的角得 0 分', angleImportance(plain, 37.42, '') === 0, `${angleImportance(plain, 37.42, '')}`)
+
+  const lline: AngleSpec = { kind: 'lineLine', p: ['P', 'A'], q: ['P', 'B'] }
+  ok('线线角认得出它涉及哪些点', pointNamesOf(lline).join(',') === 'P,A,B', pointNamesOf(lline).join(','))
+  const lplane: AngleSpec = { kind: 'linePlane', line: ['P', 'A'], plane: ['A', 'B', 'C'] }
+  ok('线面角认得出它涉及哪些点', pointNamesOf(lplane).join(',') === 'P,A,A,B,C', pointNamesOf(lplane).join(','))
 }
 
 console.log(`\n${failed === 0 ? '✓ 全部通过' : `✗ ${failed} 项未通过`}`)

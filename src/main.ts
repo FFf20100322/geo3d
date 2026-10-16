@@ -18,6 +18,8 @@ import {
   arcShape,
   buildAnnotation,
   type AngleDisplay,
+  angleImportance,
+  angleMentionedInText,
   buildLength,
   buildRatio,
   enumerateAngles,
@@ -213,15 +215,62 @@ function refreshAnnotations(): void {
       if (R) currentAnnotations.push({ shape: R, kind: 'ratio', tier: 1 })
     }
 
-    // 第二档：本地枚举出来的其余角
+    // 第二档：本地枚举出来的其余角。
+    // 枚举出来的角可能有几十个（这道正四棱锥就有 46 个），全铺出来满屏都是字，
+    // 所以先全算出来打分，再把得分最高的几个提到「重要」档 —— 打分规则见 angleImportance。
+    const secondTier: { shape: ReturnType<typeof arcShape>; kind: string; score: number; named: boolean; degrees: number }[] = []
+    const problem = $<HTMLTextAreaElement>('problem-text').value
     for (const spec of enumerateAngles(currentEdges, currentFaces)) {
       const key = angleKey(spec)
       if (used.has(key)) continue
       used.add(key)
       const a = buildAnnotation(spec, at, radius, angleDisplay)
       if (!a) continue
-      currentAnnotations.push({ shape: arcShape(a, radius), kind: spec.kind, tier: 2 })
+      secondTier.push({
+        shape: arcShape(a, radius),
+        kind: spec.kind,
+        score: angleImportance(spec, a.degrees, problem),
+        named: angleMentionedInText(spec, problem),
+        degrees: a.degrees,
+      })
     }
+    secondTier.sort((x, y) => y.score - x.score)
+
+    // 「重要」档最多显示几条。模型报的关键角、长度、比例都算在这个额度里，
+    // 免得模型报得多的时候又挤满。
+    const IMPORTANT_CAP = 8
+    const alreadyImportant = currentAnnotations.filter((x) => x.tier === 1).length
+    let room = Math.max(0, IMPORTANT_CAP - alreadyImportant)
+
+    // 先放**题面点过名的**：题目问的一定要出现，哪怕它分数不如别人高。
+    // 真机上踩过：四个 45° 的线面角分数一样高，把名额占满，
+    // 结果题面真正点名的「二面角 P-CD-A」反而没进来。
+    //
+    // 点名这一批**同样要去重**：图上有四个侧面，题面说「PA 与底面所成角」时
+    // 判据可能连带把 PB、PC、PD 也算进来，不在这里去重就又会挤满。
+    const picked = new Set<number>()
+    const seenKind = new Set<string>()
+    const kindKey = (x: { kind: string; degrees: number }) => `${x.kind}|${x.degrees.toFixed(1)}`
+    secondTier.forEach((item, i) => {
+      if (!item.named || room <= 0) return
+      if (seenKind.has(kindKey(item))) return
+      seenKind.add(kindKey(item))
+      picked.add(i)
+      room--
+    })
+
+    // 剩下的名额按分数补，同样**同类同值的角只留一个**
+    secondTier.forEach((item, i) => {
+      if (picked.has(i) || room <= 0) return
+      if (seenKind.has(kindKey(item)) || item.score <= 0) return
+      seenKind.add(kindKey(item))
+      picked.add(i)
+      room--
+    })
+
+    secondTier.forEach((item, i) => {
+      currentAnnotations.push({ shape: item.shape, kind: item.kind, tier: picked.has(i) ? 1 : 2 })
+    })
   }
 
   scene?.setAnnotations(shownAnnotations())

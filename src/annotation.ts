@@ -555,7 +555,71 @@ function ratioText(t: number): string {
   return `${t.toFixed(2)} : ${(1 - t).toFixed(2)}`
 }
 
-/** 从场景与坐标里算出半径该取多大 —— 太小看不见，太大压到别的元素 */export function suggestRadius(points: Vec3[]): number {
+/** 一个角涉及哪些点，用来判断它跟题面有没有关系 */
+export function pointNamesOf(spec: AngleSpec): string[] {
+  if (spec.kind === 'lineLine') return [spec.p[0], spec.p[1], spec.q[1]]
+  if (spec.kind === 'linePlane') return [...spec.line, ...spec.plane]
+  return [spec.edge[0], spec.edge[1], spec.inA, spec.inB]
+}
+
+/**
+ * 题面里有没有点到这个角。
+ *
+ * 一开始我用的是「点名都在题面里出现过」这种判据，结果**几乎每个角都算命中了** ——
+ * 因为题面里到处是 A、B、C、P 这些字母，`includes('A')` 谁都能中。
+ * 改成认**完整写法**：二面角找「P-CD-A」，线线角找「∠APB」，线面角找「PA」加「平面/底面」。
+ */
+export function angleMentionedInText(spec: AngleSpec, text: string): boolean {
+  const t = text.replace(/\s/g, '')
+  if (spec.kind === 'lineLine') {
+    const [v, x] = spec.p
+    const y = spec.q[1]
+    return t.includes(`∠${x}${v}${y}`) || t.includes(`∠${y}${v}${x}`)
+  }
+  if (spec.kind === 'dihedral') {
+    const [a, b] = spec.edge
+    const forms = [`${spec.inA}-${a}${b}-${spec.inB}`, `${spec.inA}-${b}${a}-${spec.inB}`]
+    return forms.some((f) => t.includes(f))
+  }
+  // 线面角：题面得**明确说的是这条线与某个平面所成的角**。
+  // 一开始只要求「出现了这条斜线 + 出现了平面/底面」，结果 PA、PB、PC、PD 四条全算点名 ——
+  // 面上有四条侧棱，题面提到「底面」是必然的，那等于没筛。
+  // 现在要求线名紧挨着「与…所成角」或「与…成角」这种说法。
+  const line = spec.line.join('')
+  const rev = [...spec.line].reverse().join('')
+  const near = new RegExp(`(${line}|${rev})\\s*(与|和)?\\s*[^，。；]{0,8}(所成角|成角|夹角)`)
+  return near.test(t) && /平面|底面/.test(t)
+}
+
+/**
+ * 给一个角打「重要性」分，用来决定「重要」档该显示哪几个。
+ *
+ * 为什么要打分：本地枚举能把图上所有角都找出来（这道正四棱锥就有 46 个），
+ * 但全铺出来满屏都是字、反而什么都看不清；而模型报的「关键角」又不一定给得全。
+ * 所以退一步：**本地自己判断哪些角值得看**，判据只用算得出来的事实。
+ *
+ * 四条判据，从强到弱：
+ * - **题面里点过名的角**（像「二面角 P-CD-A」「PA 与底面所成角」）—— 最强，题目问的一定是重点。
+ * - **直角**：课本上遇到直角都会特意画个方块，它通常就是解题的突破口。
+ * - **特殊角**：30 / 45 / 60 / 120 这类，是题目结果的常见长相。
+ * - **整数度数**：比 54.74° 更像「答案」，而 54.74° 往往只是顺带能算出来的角。
+ */
+export function angleImportance(spec: AngleSpec, degrees: number, problemText: string): number {
+  let score = angleMentionedInText(spec, problemText) ? 40 : 0
+
+  if (isRightAngle(degrees)) score += 30
+
+  const nice = [30, 45, 60, 120, 135, 150]
+  if (nice.some((v) => Math.abs(degrees - v) < 0.01)) score += 22
+
+  // 整数度数（直角已经在上面给过分，不重复给）
+  if (!isRightAngle(degrees) && Math.abs(degrees - Math.round(degrees)) < 0.005) score += 10
+
+  return score
+}
+
+/** 从场景与坐标里算出半径该取多大 —— 太小看不见，太大压到别的元素 */
+export function suggestRadius(points: Vec3[]): number {
   if (!points.length) return 0.5
   let lo = Infinity
   let hi = -Infinity

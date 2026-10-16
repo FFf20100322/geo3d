@@ -447,6 +447,30 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
     controls.minDistance = radius * 0.01
     controls.maxDistance = radius * 12
     controls.update()
+
+    // 记住这次取景，等上下让位定下来之后还要按真实可用区域重算一次距离
+    lastFit = { center: center.clone(), radius, dir: dir.clone() }
+    userAdjusted = false
+    applyFit()
+  }
+
+  /**
+   * 取景距离：按**当前**的宽高比与视野角算，让图形的外接球正好装得下。
+   *
+   * 为什么不能写死一个倍数：上下的工具条与播放条会占掉一块，画布实际比窗口矮不少。
+   * 用窗口尺寸算出来的距离，等让位生效之后就太近了 —— 真机上见过图形撑出屏幕、
+   * 只看得到中间一块。这里按真实的宽高比算，让位变化时重算一次就总是合适的。
+   */
+  function applyFit(): void {
+    if (!lastFit) return
+    const vFov = (camera.fov * Math.PI) / 180
+    const hFov = 2 * Math.atan(Math.tan(vFov / 2) * Math.max(camera.aspect, 0.01))
+    const dv = lastFit.radius / Math.sin(vFov / 2)
+    const dh = lastFit.radius / Math.sin(Math.min(hFov / 2, Math.PI / 2 - 1e-3))
+    const dist = Math.max(dv, dh) * 1.1 // 留一成余量，免得贴着边
+    controls.target.copy(lastFit.center)
+    camera.position.copy(lastFit.center).addScaledVector(lastFit.dir, dist)
+    controls.update()
   }
 
   // 相机宽高比、画布尺寸、标签层尺寸三者必须一致，否则会出现「字母和图错位」。
@@ -496,6 +520,10 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
    */
   /** 复用的临时向量：算标签世界坐标用，避免每帧新建对象 */
   const tmpWorld = new THREE.Vector3()
+  /** 上一次取景的参数；让位变化时要按新的宽高比重算距离 */
+  let lastFit: { center: THREE.Vector3; radius: number; dir: THREE.Vector3 } | null = null
+  /** 用户手动转过/缩放过之后就不再自动取景 —— 否则一让位就把人家的视角掰回去 */
+  let userAdjusted = false
   let labelsDirty = true
   /**
    * 标注排完之后仍然重叠的地方。排完就把结果记在这里，由提示行显示出来 ——
@@ -806,6 +834,10 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
   }
 
   // 手一松就重排一次（拖动、旋转、缩放结束都算）
+  controls.addEventListener('start', () => {
+    // 用户一动手就接管视角，之后不再自动取景
+    userAdjusted = true
+  })
   controls.addEventListener('end', () => {
     labelsDirty = true
   })
@@ -835,6 +867,8 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
       topInset = nextTop
       bottomInset = nextBottom
       syncViewport()
+      // 可用区域变了：用户还没自己转过就重新取一次景，转过就不动他的视角
+      if (!userAdjusted) applyFit()
     },
     onGrab: null,
     onDragRay: null,
