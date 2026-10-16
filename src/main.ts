@@ -40,7 +40,15 @@ import {
   MOVING_PROBLEM,
   REALFLOW_PROBLEM,
 } from './demo'
-import { checkFacesPlanar, edgeKey, faceKey, parseScene, toRenderable, type Scene } from './scene'
+import {
+  checkFacesPlanar,
+  edgeKey,
+  faceKey,
+  parseScene,
+  sceneForQuestion,
+  toRenderable,
+  type Scene,
+} from './scene'
 // 显式带上 Highlight：名字与浏览器内置的那个同名类型撞车，不导入就会用错
 import { mountScene3d, type Highlight } from './scene3d'
 import { mergeSolution, parseSolution, stepTimeline, type Solution } from './solution'
@@ -1881,11 +1889,49 @@ function renderQSel(): void {
   tools.style.visibility = openGroup ? 'hidden' : 'visible'
 }
 
+/**
+ * 按当前选的问，把**图形**重建一遍。
+ *
+ * 为什么必须重建图形、而不只是过滤步骤：某一问的「若」条件可能直接改掉点的定义 ——
+ * 比如第（2）问说「若 E 是 PB 的中点」，那时 E 是钉死的中点，而第（1）问里它是动点。
+ * 光藏起来不够，得按那一问的条件重新解一遍才算对。
+ *
+ * **只重建图形、不重推解答** —— 解答是按问分步骤的，切问时用 viewSolution 过滤就够了。
+ */
+function applyQuestionScene(): void {
+  const base = currentScene
+  const sol = currentSolution
+  if (!base || !scene) return
+  const use = sceneForQuestion(base, qPick)
+  const solved = solve(use.points, use.constraints)
+  // 解不出来就**什么都别动** —— 宁可停在上一张图上，也不要展示一张可能错的图。
+  if (!solved.ok) {
+    say(`这一问的图形条件对不上（最大残差 ${solved.maxError.toExponential(2)}），仍显示原来的图。`, 'err')
+    return
+  }
+  const merged = sol ? mergeSolution(use, sol) : use
+  const re = solve(merged.points, merged.constraints)
+  const pts = re.ok ? re.points : solved.points
+  currentSolvedAll = { ...pts }
+  rememberFigure(merged)
+  scene.setScene(toRenderable(merged, pts, use))
+  refreshAnnotations()
+  applyStep()
+}
+
+/** 上一次重建图形用的是哪一问。变了才重建，免得每次刷新都重画。 */
+let renderedQ = '\u0000'
+
 /** 换了一问或一种解法：步骤从头播一遍，标注也跟着重算 */
 function afterPick(): void {
   stepProgress = -1
   stepIndex = -1
   stopPlay()
+  // 换了问就要按那一问的条件重建图形（「若」那一类条件只归它自己的问）
+  if (qPick !== renderedQ) {
+    renderedQ = qPick
+    applyQuestionScene()
+  }
   renderQSel()
   refreshAnnotations()
   applyStep()

@@ -1,4 +1,11 @@
-import { checkFacesPlanar, parseScene, toDisplayName, toRenderable, type Renderable } from './scene.ts'
+import {
+  checkFacesPlanar,
+  parseScene,
+  sceneForQuestion,
+  toDisplayName,
+  toRenderable,
+  type Renderable,
+} from './scene.ts'
 import { solve, type Vec3 } from './solver.ts'
 
 /**
@@ -97,6 +104,62 @@ ok(
   '四点不共面时被揪出来',
   checkFacesPlanar(face([[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 1]])).length > 0,
 )
+
+console.log('\n【某一问独有的条件（「若」那一类）不能串问】')
+{
+  // 真机上常见的写法：「点 E 是棱 PB 上的动点。（1）…（2）若 E 是 PB 的中点，求…」。
+  // 第（2）问的「若」只对第（2）问成立。要是把它并进主场景，
+  // 第（1）问的图就悄悄错了 —— 而错的样子和对的样子**长得一模一样**，最难发现。
+  const sc = parseScene({
+    points: [
+      { name: 'A', kind: 'free', at: [0, 0, 0] },
+      { name: 'B', kind: 'free', at: [2, 0, 0] },
+      { name: 'C', kind: 'free', at: [0, 0, 2] },
+      { name: 'P', kind: 'free', at: [0, 2, 0] },
+      { name: 'E', kind: 'onSegment', of: ['P', 'B'], t: 0.5 },
+    ],
+    constraints: [
+      { kind: 'distance', a: 'A', b: 'B', value: 2 },
+      { kind: 'distance', a: 'A', b: 'C', value: 2 },
+      { kind: 'distance', a: 'A', b: 'P', value: 2 },
+      { kind: 'perpendicular', p: ['A', 'B'], q: ['A', 'C'] },
+      { kind: 'perpLinePlane', line: ['A', 'P'], plane: ['A', 'B', 'C'] },
+    ],
+    edges: [['A', 'B'], ['A', 'C'], ['P', 'B']],
+    faces: [['A', 'B', 'C']],
+    variants: [
+      {
+        q: '2',
+        // 第（2）问里 E 改成中点 —— 与主场景里那个动点 E 同名，要能替换掉
+        points: [{ name: 'E', kind: 'midpoint', of: ['P', 'B'] }],
+        // |PB| = √(2²+2²) = 2√2，所以中点到 P 是 √2。
+        // （一开始写成 1，测试当场就报「第（2）问解不出来」，残差 0.169 —— 抓得对。）
+        constraints: [{ kind: 'distance', a: 'P', b: 'E', value: Math.SQRT2 }],
+      },
+    ],
+  })
+  ok('带 variants 的场景能解析', (sc.variants?.length ?? 0) === 1, `${sc.variants?.length ?? 0} 组`)
+
+  const one = sceneForQuestion(sc, '1')
+  const two = sceneForQuestion(sc, '2')
+  const eKind = (s: { points: { name: string; kind: string }[] }) => s.points.find((p) => p.name === 'E')?.kind
+  ok('看第（1）问时 E 还是动点', eKind(one) === 'onSegment', String(eKind(one)))
+  ok('看第（2）问时 E 变成中点', eKind(two) === 'midpoint', String(eKind(two)))
+  ok(
+    '第（2）问的专属约束不会跑到第（1）问',
+    one.constraints.length === sc.constraints.length && two.constraints.length === sc.constraints.length + 1,
+    `第(1)问 ${one.constraints.length} 条 / 第(2)问 ${two.constraints.length} 条`,
+  )
+  const s1 = solve(one.points, one.constraints)
+  const s2 = solve(two.points, two.constraints)
+  ok('第（1）问的图形能解出来', s1.ok, s1.ok ? '' : `残差 ${s1.maxError.toExponential(2)}`)
+  ok('第（2）问的图形也能解出来', s2.ok, s2.ok ? '' : `残差 ${s2.maxError.toExponential(2)}`)
+  if (s2.ok) {
+    const P = s2.points
+    const PE = Math.hypot(P['E'][0] - P['P'][0], P['E'][1] - P['P'][1], P['E'][2] - P['P'][2])
+    ok('第（2）问里 E 确实在中点上', Math.abs(PE - Math.SQRT2) < 1e-6, `PE = ${PE.toFixed(6)}`)
+  }
+}
 
 console.log(`\n${failed === 0 ? '✓ 全部通过' : `✗ ${failed} 项未通过`}`)
 if (failed > 0) process.exit(1)

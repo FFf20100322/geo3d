@@ -15,6 +15,80 @@ export interface Scene {
   edges: [string, string][]
   faces: string[][]
   constraints: Constraint[]
+  /**
+   * **某一问独有的条件**（题面里「若…」那一类）。
+   *
+   * 为什么需要它：一道题常写成「点 E 是棱 PB 上的动点。（1）…（2）若 E 是 PB 的中点，求…」。
+   * 第（2）问的「若」只对第（2）问成立 —— 看第（1）问时 E 还得是动点。
+   * 要是把这些条件并进主场景，第（1）问的图就是错的（E 被钉死了），
+   * 而且这种错**看起来跟对的图一模一样**，最难发现。
+   *
+   * 所以按问分开存：这一问生效时，用这里的点定义**替换**同名的、约束**追加**进去。
+   * 没选问、或选了别的问时这些一概不生效 —— 从数据上就不可能串问。
+   */
+  variants?: {
+    /** 属于哪一问（'1'、'2'…） */
+    q: string
+    /** 同名点会被替换掉（例如把动点 E 换成中点 E） */
+    points?: PointDef[]
+    /** 追加的约束 */
+    constraints?: Constraint[]
+    /** 这一问才画出来的棱与面 */
+    edges?: [string, string][]
+    faces?: string[][]
+  }[]
+}
+
+/**
+ * 取出「按某一问看过来的场景」。
+ *
+ * 不选问（q 为空）就原样返回 —— 那时整道题一起看，所有条件都算数。
+ * 选了几问，就只并进这一问的专属条件，并且把**别的问专属的点**剔掉。
+ */
+export function sceneForQuestion(scene: Scene, q: string): Scene {
+  const variants = scene.variants ?? []
+  const mine = q ? variants.filter((v) => v.q === q) : []
+  const foreign = q
+    ? new Set(
+        variants
+          .filter((v) => v.q !== q)
+          .flatMap((v) => (v.points ?? []).map((p) => p.name))
+          .filter((n) => !scene.points.some((p) => p.name === n)),
+      )
+    : new Set<string>()
+  if (!mine.length && !foreign.size) return scene
+
+  const replaced = new Map<string, PointDef>()
+  for (const v of mine) for (const p of v.points ?? []) replaced.set(p.name, p)
+  const points = scene.points.filter((p) => !foreign.has(p.name)).map((p) => replaced.get(p.name) ?? p)
+  for (const [name, def] of replaced) if (!points.some((p) => p.name === name)) points.push(def)
+
+  const seen = new Set(scene.edges.map((e) => [...e].sort().join('|')))
+  const edges = [...scene.edges]
+  for (const v of mine)
+    for (const e of v.edges ?? []) {
+      const k = [...e].sort().join('|')
+      if (seen.has(k)) continue
+      seen.add(k)
+      edges.push(e)
+    }
+  const faceSeen = new Set(scene.faces.map((f) => [...f].sort().join('|')))
+  const faces = [...scene.faces]
+  for (const v of mine)
+    for (const f of v.faces ?? []) {
+      const k = [...f].sort().join('|')
+      if (faceSeen.has(k)) continue
+      faceSeen.add(k)
+      faces.push(f)
+    }
+
+  return {
+    ...scene,
+    points,
+    edges,
+    faces,
+    constraints: [...scene.constraints, ...mine.flatMap((v) => v.constraints ?? [])],
+  }
 }
 
 const SUB_DIGITS = ['₀', '₁', '₂', '₃', '₄', '₅', '₆', '₇', '₈', '₉']
@@ -191,7 +265,42 @@ export function parseScene(raw: unknown): Scene {
   })
 
   if (constraints.length === 0) throw new SceneError('一条约束都没有，图形没法确定')
-  return { points, edges, faces, constraints }
+
+  // 某一问独有的条件（「若」那一类）。写法与主场景一致，只是包在 variants 里。
+  // 引用的点允许是主场景里的，也允许是这一问自己新加的。
+  const rawVariants = raw.variants === undefined ? [] : arr(raw.variants, 'variants')
+  const variants: Scene['variants'] = []
+  for (const [i, v] of rawVariants.entries()) {
+    if (!isObj(v)) throw new SceneError(`第 ${i + 1} 个 variants 不是对象`)
+    const q = String(v.q ?? '').trim()
+    if (!q) throw new SceneError(`第 ${i + 1} 个 variants 没写属于哪一问（q）`)
+    const vp: PointDef[] = []
+    if (v.points !== undefined) {
+      for (const p of arr(v.points, `第 ${i + 1} 个 variants 的 points`)) {
+        if (!isObj(p)) throw new SceneError(`第 ${i + 1} 个 variants 的点不是对象`)
+        // 与主场景走同一条解析：直接复用不太好拆，这里只做最小的合法性检查
+        const name = toDisplayName(str(p.name, 'variants 里的点 name'))
+        const kind = str(p.kind, 'variants 里的点 kind')
+        vp.push({ ...(p as object), name, kind } as PointDef)
+      }
+    }
+    const vc = v.constraints === undefined ? [] : arr(v.constraints, `第 ${i + 1} 个 variants 的 constraints`)
+    const ve = v.edges === undefined ? [] : arr(v.edges, `第 ${i + 1} 个 variants 的 edges`)
+    const vf = v.faces === undefined ? [] : arr(v.faces, `第 ${i + 1} 个 variants 的 faces`)
+    variants.push({
+      q,
+      points: vp,
+      constraints: vc as Constraint[],
+      edges: ve.map((e) => {
+        const pair = arr(e, 'variants 的棱').map((x) => toDisplayName(str(x, '棱的端点')))
+        if (pair.length !== 2) throw new SceneError('variants 的棱必须是两个点')
+        return pair as [string, string]
+      }),
+      faces: vf.map((f) => arr(f, 'variants 的面').map((x) => toDisplayName(str(x, '面的顶点')))),
+    })
+  }
+
+  return variants.length ? { points, edges, faces, constraints, variants } : { points, edges, faces, constraints }
 }
 
 /** 棱的唯一标识。动画要按步骤逐条显示，所以每条棱都得能单独认出来。 */
