@@ -39,6 +39,7 @@ const shot = arg('shot', 'out.png')
 const waitMs = Number(arg('wait', 2500))
 const clicks = allArgs('click')
 const evals = allArgs('eval')
+const drags = allArgs('drag')
 // 手机视口：`--phone` 用默认尺寸，或 `--phone 412x915x2.6`
 const phoneArg = arg('phone', null)
 const phone = (() => {
@@ -186,6 +187,29 @@ try {
     const out = await run(send, e)
     console.log(`执行 ${i + 1}：${e} → ${out === undefined ? 'ok' : JSON.stringify(out)}`)
     await sleep(1200)
+  }
+
+  // 拖拽：`--drag x1,y1,x2,y2`。用 CDP 的鼠标事件序列 ——
+  // 开了触摸模拟之后，Chrome 会把它们合成 pointer 事件，正好是应用监听的。
+  // 分多步移动，而不是一步跳过去：应用里有些判定看的是移动距离。
+  for (const [i, spec] of drags.entries()) {
+    const [x1, y1, x2, y2] = spec.split(',').map(Number)
+    if ([x1, y1, x2, y2].some((n) => !Number.isFinite(n))) throw new Error(`--drag 格式应是 x1,y1,x2,y2：${spec}`)
+    await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: x1, y: y1, button: 'left', clickCount: 1 })
+    const steps = 12
+    for (let k = 1; k <= steps; k++) {
+      await send('Input.dispatchMouseEvent', {
+        type: 'mouseMoved',
+        x: x1 + ((x2 - x1) * k) / steps,
+        y: y1 + ((y2 - y1) * k) / steps,
+        button: 'left',
+        buttons: 1,
+      })
+      await sleep(40)
+    }
+    await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: x2, y: y2, button: 'left', clickCount: 1 })
+    console.log(`拖拽 ${i + 1}：(${x1},${y1}) → (${x2},${y2})`)
+    await sleep(1000)
   }
 
   const shotPath = resolve(shot)

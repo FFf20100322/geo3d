@@ -52,7 +52,10 @@
       /* 消息行必须是全局浮层：以前它长在拍题页里面，于是建模失败时用户在文字页什么都看不到，
          只看到进度条闪一下就没动静了，根本不知道发生了什么。
          它不接收点击（pointer-events:none），否则会挡住下面的按钮；并且会自己消失。 */
-      #status { position: fixed; left: 12px; right: 12px; bottom: 16px; z-index: 40; margin: 0; padding: 10px 12px; border-radius: 10px; font-size: 13px; line-height: 1.5; background: rgba(20,26,34,.97); border: 1px solid #2b3442; box-shadow: 0 6px 20px rgba(0,0,0,.45); pointer-events: none; }
+      /* bottom 要避开 3D 页底下那一行（#footline 在 bottom:8px，高约 16px）——
+         两个固定定位的元素原来都压在底部，提示框会把那一行**整个盖住**。
+         这是项目铁律「两个控件不能占同一位置」的一个实例。 */
+      #status { position: fixed; left: 12px; right: 12px; bottom: 34px; z-index: 40; margin: 0; padding: 10px 12px; border-radius: 10px; font-size: 13px; line-height: 1.5; background: rgba(20,26,34,.97); border: 1px solid #2b3442; box-shadow: 0 6px 20px rgba(0,0,0,.45); pointer-events: none; }
       #status:empty { display: none; }
       #status.err { color: #ff7b72; border-color: #5a2a2a; }
       #status.ok { color: #4ec9a5; border-color: #24503f; }

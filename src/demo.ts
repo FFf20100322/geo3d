@@ -199,6 +199,9 @@ export const FOLD_SCENE = {
     { kind: 'distance', a: 'B', b: 'C', value: 2 },
     { kind: 'angle', at: 'B', from: 'A', to: 'C', value: 90 },
   ],
+  // **D 不在图上出现**：它只是「折之前的位置」，D₂ 要靠它算出来。
+  // 不写这一条的话，图上会孤零零挂一个 D（点的名字是常驻的），看着像少画了什么。
+  hiddenPoints: ['D'],
   // **折纸的样子**：只画折完之后那个空间四边形 A-B-C-D₂，
   // 它由两块刚性三角面拼成 —— 沿 BC 折起来之后，
   // 三角形 ABC 不动，三角形 BCD₂ 绕着 BC 转。

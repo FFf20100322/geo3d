@@ -269,6 +269,10 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
 
     // 点标注走 DOM 覆盖层，永远压在最上面 —— 「点标注必须常驻」靠这层保证
     for (const v of r.vertices) {
+      // 只用来算的点（翻折题里「折之前的位置」那种）**不画名字**。
+      // 它既没有棱连着、也不是折完图形的顶点，挂个字母在图上会让人以为少画了什么。
+      // 仍然是照常登记的：拖动时它的坐标要参与计算。
+      if (v.hidden) continue
       const el = document.createElement('div')
       el.className = v.moving ? 'pt mov' : v.aux ? 'pt aux' : 'pt'
       el.textContent = v.name

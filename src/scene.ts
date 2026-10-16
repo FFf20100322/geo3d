@@ -42,6 +42,15 @@ export interface Scene {
   /** 曲面立体（球、椭球、圆柱、圆锥、圆台）。棱柱棱锥用点与面表达，不写在这里。 */
   solids?: SolidDef[]
   /**
+   * **只用来算、不在图上出现的点**。
+   *
+   * 翻折题就是典型：D 是「折之前的位置」，`onArc` 要靠它算出折起来之后的 D₂ ——
+   * 但它本身不该出现在图上（既不是折完图形的顶点，也没有棱连着它）。
+   * 一开始靠「不把它放进 edges/faces」来达到这个效果，可行但不够 ——
+   * **点的名字是常驻的**，于是图上会孤零零挂一个 D，看着像少画了什么。
+   */
+  hiddenPoints?: string[]
+  /**
    * **某一问独有的条件**（题面里「若…」那一类）。
    *
    * 为什么需要它：一道题常写成「点 E 是棱 PB 上的动点。（1）…（2）若 E 是 PB 的中点，求…」。
@@ -392,7 +401,18 @@ export function parseScene(raw: unknown): Scene {
     else throw new SceneError(`不认识的立体种类 ${kind}（只支持 ${SOLID_KINDS.join('、')}）`)
   }
 
-  const out: Scene = solids.length ? { points, edges, faces, constraints, solids } : { points, edges, faces, constraints }
+  // 只用来算、不在图上出现的点（翻折题里「折之前的位置」那种）。
+  // 名字写错要当场报 —— 不然它会静默失配，那个点还是照常显示出来。
+  const hiddenPoints =
+    raw.hiddenPoints === undefined
+      ? []
+      : arr(raw.hiddenPoints, 'hiddenPoints').map((x) => toDisplayName(str(x, 'hiddenPoints 里的点')))
+  for (const n of hiddenPoints) if (!known.has(n)) throw new SceneError(`hiddenPoints 里的 ${n} 在图上的点里找不到`)
+
+  const extra = hiddenPoints.length ? { hiddenPoints } : {}
+  const out: Scene = solids.length
+    ? { points, edges, faces, constraints, solids, ...extra }
+    : { points, edges, faces, constraints, ...extra }
   return variants.length ? { ...out, variants } : out
 }
 
@@ -406,6 +426,8 @@ export interface RVertex {
   aux: boolean
   /** 动点：位置由拖动决定 */
   moving: boolean
+  /** 只用来算、不在图上画出来（名字也不显示） */
+  hidden?: boolean
 }
 
 export interface REdge {
@@ -469,6 +491,7 @@ export function toRenderable(scene: Scene, solved: Record<string, Vec3>, base?: 
   }
   const basePoints = new Set((base ?? scene).points.map((p) => p.name))
   const baseEdges = new Set((base ?? scene).edges.map(([a, b]) => edgeKey(a, b)))
+  const hiddenSet = new Set((base ?? scene).hiddenPoints ?? scene.hiddenPoints ?? [])
 
   return {
     vertices: scene.points.map((p) => ({
@@ -476,6 +499,7 @@ export function toRenderable(scene: Scene, solved: Record<string, Vec3>, base?: 
       at: at(p.name),
       aux: base ? !basePoints.has(p.name) : false,
       moving: isMoving(p),
+      hidden: hiddenSet.has(p.name),
     })),
     edges: scene.edges.map(([a, b]) => ({
       key: edgeKey(a, b),
