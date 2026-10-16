@@ -226,8 +226,14 @@ export const FOLD_SOLUTION = {
       why: '平行四边形的对边平行且相等',
       q: '0',
       addPoints: [],
-      addEdges: [['A', 'B'], ['B', 'C'], ['C', 'D'], ['D', 'A'], ['A', 'C']],
-      uses: ['ABCD', 'A', 'B', 'C'],
+      // 只画折完之后真的存在的棱。**不要再画 C-D、D-A** ——
+      // D 是「折之前的位置」，只是一个参考点，图上不该出现它；
+      // 一开始这里还连着 D，结果是两条虚线飘到一个看不见的点上。
+      addEdges: [['A', 'B'], ['B', 'C'], ['A', 'C']],
+      // 注意：这道题的「面」是 ABC 与 BCD₂ 两块（折纸被拆成刚性三角面），
+      // **没有 ABCD 这个面** —— 一开始这里写了 ABCD，载入时报
+      // 「第 1 步用到还不存在的元素 ABCD」，是程序把它点出来的。
+      uses: ['ABC', 'A', 'B', 'C'],
     },
     {
       title: '把 D 绕 BC 折起来',
@@ -236,7 +242,7 @@ export const FOLD_SOLUTION = {
       q: '0',
       addPoints: [{ name: 'D2', kind: 'onArc', of: ['B', 'C'], from: 'D', angle: 90 }],
       addEdges: [['C', 'D2'], ['D2', 'A']],
-      uses: ['D2', 'BC'],
+      uses: ['D2', 'B', 'C'],
     },
   ],
   answers: [
