@@ -42,6 +42,7 @@ const $ = <T extends HTMLElement = HTMLElement>(id: string): T => document.getEl
 
 const views = {
   photo: $('view-photo'),
+  saved: $('view-saved'),
   pick: $('view-pick'),
   text: $('view-text'),
   solution: $('view-solution'),
@@ -71,9 +72,9 @@ function show(v: ViewName | '3d') {
   onSceneView = v === '3d'
   scene?.setActive(onSceneView)
   updateCaption(onSceneView)
-  // 「载入已保存的题目」列表每次回到拍题页都重画一遍 ——
+  // 「载入已保存的题目」那一页每次进去都重画一遍 ——
   // 以后导入的题目是随时可能增加的，画一次就定死在页面上会漏掉新来的。
-  if (v === 'photo') renderSavedList()
+  if (v === 'saved') renderSavedList()
   syncSceneChrome()
 }
 
@@ -1175,6 +1176,10 @@ function loadBuiltinDemo(): void {
  * 否则这条需求连测都没法测。这里只是把流程送到可编辑题面那一页，
  * 后面走的是完全相同的一条路（建模 → 求解 → 回验 → 解题）。
  */
+/** 「载入已保存的题目」是个入口按钮，点了才进那一页去选 */
+$('btn-saved').onclick = () => show('saved')
+$('saved-back').onclick = () => show('photo')
+
 $('btn-type').onclick = () => {
   $<HTMLTextAreaElement>('problem-text').value = REALFLOW_PROBLEM
   $<HTMLTextAreaElement>('extra').value = ''

@@ -188,21 +188,24 @@
       <input id="file-camera" type="file" accept="image/*" capture="environment" hidden />
       <input id="file-album" type="file" accept="image/*" hidden />
 
-      <!-- 两条「不用拍照」的路子分成两块，各带标题 ——
-           原来这两个按钮长得一模一样、还挨在一起，看不出它们其实是两种不同的入口。 -->
+      <!-- 两条「不用拍照」的路子各是一个按钮，点了才进去。
+           列表不摆在拍题页上：那样页面会被越撑越长，以后导入的题目一多就没法看了。 -->
       <div class="pick-sec">
-        <h3>载入已保存的题目</h3>
-        <p class="muted">点一条就打开。从别的手机或电脑导入的题目也会出现在这里。</p>
-        <div id="demo-list" class="pick-list"></div>
-      </div>
-
-      <div class="pick-sec">
-        <h3>不用拍照，直接打字</h3>
-        <p class="muted">把题干打进去（或粘进去），不用图也能建出立体模型。</p>
+        <h3>不用拍照</h3>
+        <button id="btn-saved" class="ghost">载入已保存的题目</button>
         <button id="btn-type" class="ghost">直接输入题目文字</button>
       </div>
 
       <div id="photo-preview"></div>
+    </section>
+
+    <section id="view-saved" class="view">
+      <h2>载入已保存的题目</h2>
+      <p class="muted">点一条就打开。从别的手机或电脑导入的题目也会出现在这里。</p>
+      <div class="gap"></div>
+      <div id="demo-list" class="pick-list"></div>
+      <div class="gap"></div>
+      <button id="saved-back" class="ghost">返回</button>
     </section>
 
     <section id="view-pick" class="view">
