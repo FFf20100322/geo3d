@@ -74,6 +74,11 @@
 
       #player { position: fixed; left: 12px; right: 12px; bottom: 76px; z-index: 16; display: none; }
       #player .pl-row { display: flex; gap: 6px; align-items: center; padding: 6px; border-radius: 10px; background: rgba(20,26,34,.9); border: 1px solid #2b3442; }
+      /* 收起状态：只留下「展开」那一个按钮，其余全藏起来 —— 图形能多看一截。
+         收起按钮自己不藏，否则就没有东西能点开它了。 */
+      #player.folded .pl-row > :not(#pl-fold) { display: none; }
+      #player.folded #pl-range, #player.folded #pl-text { display: none; }
+      #player.folded .pl-row { width: fit-content; margin-left: auto; }
       button.small { padding: 6px 9px; font-size: 13px; border-radius: 8px; }
       #pl-label { flex: 1; text-align: center; font-size: 12px; color: #98a2b3; font-variant-numeric: tabular-nums; }
       #pl-range { width: 100%; margin: 8px 0 0; accent-color: #2f6df6; }
@@ -308,6 +313,7 @@
         <button id="pl-play" class="ghost small">▶ 播放</button>
         <button id="pl-next" class="ghost small">下一步 ▶</button>
         <span id="pl-label">全部</span>
+        <button id="pl-fold" class="ghost small" title="把这一行收起来，多看一点图形">▼ 收起</button>
       </div>
       <input id="pl-range" type="range" min="-1" max="0" step="1" value="-1" />
       <div id="pl-text"></div>

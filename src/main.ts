@@ -1731,6 +1731,17 @@ function stopPlay(): void {
   $('pl-play').textContent = '▶ 播放'
 }
 
+/**
+ * 底部那一行的收起/展开。
+ * 收起之后图形能多看一截 —— 上下的让位是量真实元素高度算的，
+ * 所以这里改完只要让 syncViewInset 重算一次，相机的取景也会跟着重新适配。
+ */
+$('pl-fold').onclick = () => {
+  const folded = $('player').classList.toggle('folded')
+  $('pl-fold').textContent = folded ? '▲ 展开' : '▼ 收起'
+  syncViewInset()
+}
+
 $('pl-prev').onclick = () => {
   stopPlay()
   setStep(stepIndex <= 0 ? -1 : stepIndex - 1)
