@@ -148,8 +148,8 @@ export const DEMO_SOLUTION = {
  * （1）E 取中点这个**特定位置**下的线面角 —— 落在某一步上；
  * （2）EF 的最小值 —— 要说明它对任意位置都成立，正好考向量/基底/坐标三种做法。
  */
-export const MOVING_PROBLEM = `在棱长为 2 的正方体 ABCD-A₁B₁C₁D₁ 中，点 E 是棱 BB₁ 上的动点，点 F 是底面 ABCD 内的动点。
-（1）当 E 是棱 BB₁ 的中点时，求直线 A₁E 与底面 ABCD 所成角的正切值；
+export const MOVING_PROBLEM = `在棱长为 2 的正方体 ABCD-A₁B₁C₁D₁ 中，点 E 是棱 A₁B₁ 上的动点，点 F 是底面 ABCD 内的动点。
+（1）当 E 是棱 A₁B₁ 的中点时，求直线 A₁E 与底面 ABCD 所成角的正切值；
 （2）求线段 EF 的最小值。`
 
 /**
