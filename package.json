@@ -1,9 +1,9 @@
 {
   "name": "geo3d",
   "private": true,
-  "version": "0.0.1",
+  "version": "0.1.0",
   "type": "module",
-  "description": "立体几何拍照解题 3D 助手",
+  "description": "高中立体几何 3D 助手：拍照或直接输入题目文字，本地算出立体图形，给出分步解答与可交互的 3D 模型",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
