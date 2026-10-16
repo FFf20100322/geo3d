@@ -155,30 +155,33 @@ export const FOLD_SCENE = {
     { name: 'A', kind: 'free', at: [0, 0, 0] },
     { name: 'B', kind: 'free', at: [2, 0, 0] },
     { name: 'C', kind: 'free', at: [2, 0, 2] },
-    // D 由平移派生：四边形 ABCD 是平行四边形，D = A + C − B
+    // D 是**折之前**的位置，只当参考点用 —— 图上不画它（不放进 edges / faces），
+    // 不然会看到「平的平行四边形」和「折起来的」两个图形叠在一起，像画错了一样。
     { name: 'D', kind: 'offset', of: ['A', 'C', 'B'] },
-    // ↓ 翻折的那个动点：绕棱 BC 转，起点是 D。拖动时改的是 angle。
-    { name: 'D2', kind: 'onArc', of: ['B', 'C'], from: 'D', angle: 90 },
+    // ↓ 折起来之后的那个顶点。绕棱 BC 转，拖动时改的是 angle。
+    { name: 'D2', kind: 'onArc', of: ['B', 'C'], from: 'D', angle: 100 },
   ],
   constraints: [
     { kind: 'distance', a: 'A', b: 'B', value: 2 },
     { kind: 'distance', a: 'B', b: 'C', value: 2 },
     { kind: 'angle', at: 'B', from: 'A', to: 'C', value: 90 },
   ],
+  // **折纸的样子**：只画折完之后那个空间四边形 A-B-C-D₂，
+  // 它由两块刚性三角面拼成 —— 沿 BC 折起来之后，
+  // 三角形 ABC 不动，三角形 BCD₂ 绕着 BC 转。
   edges: [
     ['A', 'B'],
     ['B', 'C'],
     ['C', 'D2'],
     ['D2', 'A'],
+    // 折痕
     ['A', 'C'],
-    ['C', 'D'],
-    ['D', 'A'],
   ],
   faces: [
-    // 折起来之后的那一块（三角形 BCD₂）
+    // 不动的这一块
+    ['A', 'B', 'C'],
+    // 折起来的那一块（它与 ABC 共用棱 BC，绕它旋转）
     ['B', 'C', 'D2'],
-    // 原来平放的那一块
-    ['A', 'B', 'C', 'D'],
   ],
 }
 

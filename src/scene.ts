@@ -10,11 +10,37 @@ import { isMoving, type Constraint, type PointDef, type Vec3 } from './solver.ts
  * 猜错一个约束 = 给你一张看着正常、其实错的图，那比说「我不会」糟糕得多。
  */
 
+/**
+ * 曲面立体：球、椭球、圆柱、圆锥、圆台。
+ *
+ * **棱柱、棱锥、棱台不用在这里** —— 它们用「点 + 面」就能完整表达（面是平面多边形），
+ * 现有架构本来就支持。这里只补那些**有曲面**的：曲面没法用几个平面多边形拼出来。
+ *
+ * 每个都以图上的点为依据（圆心、轴上两点、母线端点），所以它们会跟着动点一起变 ——
+ * 与整个「模型只给关系、坐标本地算」的路子一致。
+ */
+export type SolidDef =
+  /** 球：球心 + 球面上一个点（半径由这两点定，不直接给数） */
+  | { kind: 'sphere'; center: string; through: string }
+  /** 椭球：球心 + 三条半轴各一个端点 */
+  | { kind: 'ellipsoid'; center: string; a: string; b: string; c: string }
+  /** 圆柱：轴的两个端点 + 半径 */
+  | { kind: 'cylinder'; a: string; b: string; radius: number }
+  /** 圆锥：顶点 + 底面圆心 + 底面圆上一点（半径由后两点定） */
+  | { kind: 'cone'; apex: string; center: string; rim: string }
+  /** 圆台：轴的两个端点 + 两端半径 */
+  | { kind: 'frustum'; a: string; b: string; radiusA: number; radiusB: number }
+
+/** 曲面立体的种类名，解析时用它校验，也用来生成「这个图形里有球」这类说明 */
+export const SOLID_KINDS = ['sphere', 'ellipsoid', 'cylinder', 'cone', 'frustum'] as const
+
 export interface Scene {
   points: PointDef[]
   edges: [string, string][]
   faces: string[][]
   constraints: Constraint[]
+  /** 曲面立体（球、椭球、圆柱、圆锥、圆台）。棱柱棱锥用点与面表达，不写在这里。 */
+  solids?: SolidDef[]
   /**
    * **某一问独有的条件**（题面里「若…」那一类）。
    *
@@ -315,7 +341,59 @@ export function parseScene(raw: unknown): Scene {
     })
   }
 
-  return variants.length ? { points, edges, faces, constraints, variants } : { points, edges, faces, constraints }
+  // 曲面立体：球、椭球、圆柱、圆锥、圆台。
+  // 引用的点必须已经在上面定义过 —— 写错要当场报出来，
+  // 不然它会在渲染层悄悄画不出来，那种「图里少了一块」最难查。
+  const solids: SolidDef[] = []
+  for (const [i, s] of (raw.solids === undefined ? [] : arr(raw.solids, 'solids')).entries()) {
+    if (!isObj(s)) throw new SceneError(`第 ${i + 1} 个 solids 不是对象`)
+    const kind = str(s.kind, `第 ${i + 1} 个 solids 的 kind`)
+    const ref = (x: unknown, what: string) => {
+      const n = toDisplayName(str(x, what))
+      if (!known.has(n)) throw new SceneError(`${what} 引用了还没定义的点 ${n}`)
+      return n
+    }
+    const rad = (x: unknown, what: string) => {
+      const v = num(x, what)
+      if (!(v > 0)) throw new SceneError(`${what} 必须是正数`)
+      return v
+    }
+    if (kind === 'sphere') solids.push({ kind, center: ref(s.center, `第 ${i + 1} 个球的球心`), through: ref(s.through, `第 ${i + 1} 个球面上的点`) })
+    else if (kind === 'ellipsoid')
+      solids.push({
+        kind,
+        center: ref(s.center, `第 ${i + 1} 个椭球的中心`),
+        a: ref(s.a, '椭球 a 半轴端点'),
+        b: ref(s.b, '椭球 b 半轴端点'),
+        c: ref(s.c, '椭球 c 半轴端点'),
+      })
+    else if (kind === 'cylinder')
+      solids.push({
+        kind,
+        a: ref(s.a, '圆柱轴的一个端点'),
+        b: ref(s.b, '圆柱轴的另一个端点'),
+        radius: rad(s.radius, '圆柱半径'),
+      })
+    else if (kind === 'cone')
+      solids.push({
+        kind,
+        apex: ref(s.apex, '圆锥顶点'),
+        center: ref(s.center, '圆锥底面圆心'),
+        rim: ref(s.rim, '圆锥底面圆上一点'),
+      })
+    else if (kind === 'frustum')
+      solids.push({
+        kind,
+        a: ref(s.a, '圆台轴的一个端点'),
+        b: ref(s.b, '圆台轴的另一个端点'),
+        radiusA: rad(s.radiusA, '圆台一端的半径'),
+        radiusB: rad(s.radiusB, '圆台另一端的半径'),
+      })
+    else throw new SceneError(`不认识的立体种类 ${kind}（只支持 ${SOLID_KINDS.join('、')}）`)
+  }
+
+  const out: Scene = solids.length ? { points, edges, faces, constraints, solids } : { points, edges, faces, constraints }
+  return variants.length ? { ...out, variants } : out
 }
 
 /** 棱的唯一标识。动画要按步骤逐条显示，所以每条棱都得能单独认出来。 */
@@ -350,6 +428,27 @@ export interface Renderable {
   vertices: RVertex[]
   edges: REdge[]
   faces: RFace[]
+  /**
+   * 曲面立体。**已经换算成具体几何参数**（球心 + 半径这种），
+   * 不再引用点名 —— 渲染层不该知道「球心是哪个点」。
+   */
+  solids?: {
+    kind: 'sphere' | 'ellipsoid' | 'cylinder' | 'cone' | 'frustum'
+    center?: Vec3
+    radius?: number
+    a?: Vec3
+    b?: Vec3
+    apex?: Vec3
+    radiusA?: number
+    radiusB?: number
+    /** 椭球的三条半轴：长度 ra/rb/rc，各自的方向 ax/ay/az */
+    ax?: Vec3
+    ay?: Vec3
+    az?: Vec3
+    ra?: number
+    rb?: number
+    rc?: number
+  }[]
 }
 
 /** 每个共面一个颜色，循环取用 */
@@ -392,6 +491,31 @@ export function toRenderable(scene: Scene, solved: Record<string, Vec3>, base?: 
       names: [...ring],
       color: PALETTE[i % PALETTE.length],
     })),
+    // 曲面立体：把它们**换算成具体的几何参数**再交给渲染层。
+    // 渲染层不该知道「球心是哪个点」这种事 —— 那是场景层的事；
+    // 它只需要「一个球心在这里、半径这么大」。
+    solids: (scene.solids ?? []).map((s) => {
+      const d3 = (a: Vec3, b: Vec3) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2])
+      if (s.kind === 'sphere') {
+        return { kind: 'sphere' as const, center: at(s.center), radius: d3(at(s.center), at(s.through)) }
+      }
+      if (s.kind === 'ellipsoid') {
+        const c = at(s.center)
+        return {
+          kind: 'ellipsoid' as const,
+          center: c,
+          ra: Math.max(1e-6, d3(c, at(s.a))),
+          rb: Math.max(1e-6, d3(c, at(s.b))),
+          rc: Math.max(1e-6, d3(c, at(s.c))),
+          ax: at(s.a),
+          ay: at(s.b),
+          az: at(s.c),
+        }
+      }
+      if (s.kind === 'cylinder') return { kind: 'cylinder' as const, a: at(s.a), b: at(s.b), radius: s.radius }
+      if (s.kind === 'cone') return { kind: 'cone' as const, apex: at(s.apex), center: at(s.center), radius: d3(at(s.center), at(s.rim)) }
+      return { kind: 'frustum' as const, a: at(s.a), b: at(s.b), radiusA: s.radiusA, radiusB: s.radiusB }
+    }),
   }
 }
 
