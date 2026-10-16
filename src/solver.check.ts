@@ -118,5 +118,53 @@ run(
   },
 )
 
+console.log('\n【翻折题的动点：绕一条棱旋转（onArc）】')
+{
+  // 这个文件用的是「攒一批再打印」的写法，这里补一个同名小函数，与别的自检文件一致
+  const ok = (label: string, pass: boolean, extra = '') => {
+    console.log(`${pass ? '  ✓' : '  ✗'} ${label}${extra ? `　${extra}` : ''}`)
+    if (!pass) failed++
+  }
+
+  // 用户要的题型：平行四边形 ABCD 里把 D 绕对角线 BC 折起来。
+  // 动点走的是一段**圆弧**，起点是原来的 D，终点是折起来之后的 D′。
+  //
+  // 这里用一组最简单的坐标验它：绕 y 轴（即 x=z=0 那条线）把 (1,0,0) 转 90°，
+  // 应该落到 (0,0,-1) —— 手算就能核对，不依赖程序自己说自己对。
+  const mk = (angle: number): PointDef[] => [
+    { name: 'O', kind: 'free', at: [0, 0, 0] },
+    { name: 'Y', kind: 'free', at: [0, 1, 0] },
+    { name: 'D', kind: 'free', at: [1, 0, 0] },
+    { name: 'D2', kind: 'onArc', of: ['O', 'Y'], from: 'D', angle },
+  ]
+  const cons: Constraint[] = [
+    { kind: 'distance', a: 'O', b: 'Y', value: 1 },
+    { kind: 'distance', a: 'O', b: 'D', value: 1 },
+    { kind: 'perpendicular', p: ['O', 'Y'], q: ['O', 'D'] },
+  ]
+  const at = (angle: number, name: string): Vec3 | null => {
+    const r = solve(mk(angle), cons)
+    return r.ok ? (r.points[name] ?? null) : null
+  }
+  const near3 = (a: Vec3 | null, b: Vec3, tol = 1e-6) =>
+    !!a && Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) < tol
+
+  ok('转 0° 时还在原地', near3(at(0, 'D2'), [1, 0, 0]), JSON.stringify(at(0, 'D2')))
+  ok('转 90° 落到 (0,0,−1)', near3(at(90, 'D2'), [0, 0, -1]), JSON.stringify(at(90, 'D2')))
+  ok('转 180° 落到 (−1,0,0)', near3(at(180, 'D2'), [-1, 0, 0]), JSON.stringify(at(180, 'D2')))
+  // 转多少度都该在同一个圆上：到轴的距离恒等于 1
+  const radii = [15, 47, 123, 179].map((a) => {
+    const p = at(a, 'D2')
+    return p ? Math.hypot(p[0], p[2]) : NaN
+  })
+  ok(
+    '任何角度都落在同一个圆上（到轴的距离恒为 1）',
+    radii.every((r) => Math.abs(r - 1) < 1e-6),
+    radii.map((r) => r.toFixed(6)).join(' '),
+  )
+  // 轴上那两个点不能被转跑
+  ok('轴上的点不动', near3(at(90, 'O'), [0, 0, 0]) && near3(at(90, 'Y'), [0, 1, 0]))
+}
+
 console.log(`\n${failed === 0 ? '✓ 全部通过' : `✗ ${failed} 项未通过`}`)
 if (failed > 0) process.exit(1)

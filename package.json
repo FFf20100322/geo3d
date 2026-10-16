@@ -1,7 +1,7 @@
 {
   "name": "geo3d",
   "private": true,
-  "version": "0.7.0",
+  "version": "0.8.0",
   "type": "module",
   "description": "Geo3D —— 高中立体几何的 3D 解题与演示：拍照或直接输入题目，本地算出立体图形并逐条回验，给出分步解答与可交互 3D 模型",
   "scripts": {

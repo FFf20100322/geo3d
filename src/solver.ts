@@ -29,9 +29,19 @@ export type PointDef =
   | { name: string; kind: 'onSegment'; of: [string, string]; t: number }
   /** 动点：在一个面内滑动。三角形用重心坐标，四边形用双线性插值 */
   | { name: string; kind: 'inFace'; face: string[]; u: number; v: number }
+  /**
+   * **翻折题的动点**：把 `from` 绕直线 `of`（两个端点）旋转 `angle` 度得到的点。
+   *
+   * 专门为「把平行四边形 ABCD 里的 D 绕对角线 BC 折起来」这类题准备 ——
+   * 那时动点走的是一段**圆弧**，起点是原来的 D，终点是折起来之后的 D′。
+   * 拖动时改的是 `angle`，不是坐标。
+   */
+  | { name: string; kind: 'onArc'; of: [string, string]; from: string; angle: number }
 
 /** 动点：位置由拖动决定，不是解出来的 */
-export const isMoving = (d: PointDef): boolean => d.kind === 'onSegment' || d.kind === 'inFace'
+/** 能被手指抓住拖动的点。翻折题那个绕棱旋转的点也算 —— 它拖的是角度。 */
+export const isMoving = (d: PointDef): boolean =>
+  d.kind === 'onSegment' || d.kind === 'inFace' || d.kind === 'onArc'
 
 export type Constraint =
   /** |AB| = value */
@@ -124,6 +134,34 @@ function buildPoints(defs: PointDef[], free: Vector3[]): Record<string, Vector3>
           break
         }
         out[d.name] = a.clone().addScaledVector(ab, new Vector3().subVectors(p, a).dot(ab) / len2)
+        break
+      }
+      case 'onArc': {
+        // **翻折题的动点**：把 from 这个点绕直线 a-b 旋转 angle 度。
+        //
+        // 为什么单开一种：翻折（把一个面绕一条棱折起来）时，
+        // 动点走的既不是线段也不是平面，而是**一段圆弧** ——
+        // 起点是翻折前的位置，终点是翻折后的位置。
+        // 用罗德里格斯公式直接算，不需要迭代。
+        const a = v(out, d.of[0])
+        const b = v(out, d.of[1])
+        const p = v(out, d.from)
+        const axisV = new Vector3().subVectors(b, a)
+        if (axisV.length() < EPS) {
+          out[d.name] = p.clone()
+          break
+        }
+        axisV.normalize()
+        const rad = (d.angle * Math.PI) / 180
+        const rel = new Vector3().subVectors(p, a)
+        const cos = Math.cos(rad)
+        const sin = Math.sin(rad)
+        out[d.name] = a
+          .clone()
+          .addScaledVector(rel, cos)
+          // 罗德里格斯：v·cosθ + (k×v)·sinθ + k(k·v)(1−cosθ)
+          .addScaledVector(new Vector3().crossVectors(axisV, rel), sin)
+          .addScaledVector(axisV, axisV.dot(rel) * (1 - cos))
         break
       }
       case 'onSegment': {

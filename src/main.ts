@@ -36,6 +36,9 @@ import {
   DEMO_SOLUTION,
   FULL_PROBLEM,
   FULL_SCENE,
+  FOLD_PROBLEM,
+  FOLD_SCENE,
+  FOLD_SOLUTION,
   FULL_SOLUTION,
   MOVING_PROBLEM,
   REALFLOW_PROBLEM,
@@ -712,10 +715,53 @@ function dragMoving(name: string, ray: Ray): void {
     if (!uv) return
     def.u = uv.u
     def.v = uv.v
+  } else if (def?.kind === 'onArc') {
+    // **翻折题的动点**：手指拖的是「折起来多少度」。
+    // 把手指射线投到过起点、垂直于旋转轴的那个平面上，量出转过的角度。
+    const a = currentSolvedAll[def.of[0]]
+    const b = currentSolvedAll[def.of[1]]
+    const from = currentSolvedAll[def.from]
+    if (!a || !b || !from) return
+    const axisV = subVec(b, a)
+    const len = Math.hypot(...axisV)
+    if (len < 1e-9) return
+    const k = [axisV[0] / len, axisV[1] / len, axisV[2] / len] as Vec3
+    // 起点在旋转平面内的半径向量（垂直于轴的那一段）
+    const rel = subVec(from, a)
+    const along = rel[0] * k[0] + rel[1] * k[1] + rel[2] * k[2]
+    const r0 = subVec(rel, [k[0] * along, k[1] * along, k[2] * along])
+    const rLen = Math.hypot(...r0)
+    if (rLen < 1e-9) return // 起点就在轴上，转不动
+    // 旋转平面：过 a，法向就是轴
+    const hit = rayPlaneHit(ray, a, addVec(a, k), addVec(a, r0) as Vec3)
+    if (!hit) return
+    const r1 = subVec(hit, a)
+    const along1 = r1[0] * k[0] + r1[1] * k[1] + r1[2] * k[2]
+    const p1 = subVec(r1, [k[0] * along1, k[1] * along1, k[2] * along1])
+    const p1Len = Math.hypot(...p1)
+    if (p1Len < 1e-9) return
+    // 两个半径向量的夹角就是转过的角度；符号用「轴×r0 与 p1 的点积」定
+    const dot = (r0[0] * p1[0] + r0[1] * p1[1] + r0[2] * p1[2]) / (rLen * p1Len)
+    let deg = (Math.acos(Math.max(-1, Math.min(1, dot))) * 180) / Math.PI
+    const cr = crossVec(k, r0)
+    if (cr[0] * p1[0] + cr[1] * p1[1] + cr[2] * p1[2] < 0) deg = -deg
+    // 折到 360 度以外没有意义，夹在 −180..180
+    def.angle = Math.max(-180, Math.min(180, deg))
   } else {
     return
   }
   applyMoving()
+}
+
+/** 几个小的三维向量运算。只在这里用，不值得单独开个模块。 */
+function subVec(a: Vec3, b: Vec3): Vec3 {
+  return [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+}
+function addVec(a: Vec3, b: Vec3): Vec3 {
+  return [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
+}
+function crossVec(a: Vec3, b: Vec3): Vec3 {
+  return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
 }
 
 /**
@@ -1108,11 +1154,13 @@ $('btn-repick').onclick = () => {
  * - `cube` 棱长 2 的正方体：四边形面、全部 8 种点类型与 8 种约束、四个问、
  *   辅助点是**由解答一步步加出来的**（所以播放器有东西可以揭示）。
  */
-function loadBuiltinDemo(which: 'tetra' | 'cube' = 'tetra'): void {
+function loadBuiltinDemo(which: 'tetra' | 'cube' | 'fold' = 'tetra'): void {
   const [problem, sceneSrc, solutionSrc] =
     which === 'cube'
       ? [FULL_PROBLEM, FULL_SCENE, FULL_SOLUTION]
-      : [DEMO_PROBLEM, DEMO_SCENE, DEMO_SOLUTION]
+      : which === 'fold'
+        ? [FOLD_PROBLEM, FOLD_SCENE, FOLD_SOLUTION]
+        : [DEMO_PROBLEM, DEMO_SCENE, DEMO_SOLUTION]
   $<HTMLTextAreaElement>('problem-text').value = problem
   $<HTMLTextAreaElement>('extra').value = ''
   $('points').textContent = ''
@@ -1219,6 +1267,11 @@ function importedItems(): { title: string; desc: string; run: () => void }[] {
       title: '正方体 · 动点 E、F（走真实建模流程）',
       desc: '内置题目：只有文字，图形与解答让模型现场推。两个问都绕不开动点，用来试三种解题法在拖动时的实时更新。要联网。',
       run: () => startRealFlow(MOVING_PROBLEM),
+    },
+    {
+      title: '翻折：平行四边形沿对角线折起',
+      desc: '内置示例：不耗接口、秒开。D₂ 是绕棱 BC 旋转的点 —— 拖它，它会沿一段圆弧滑动，图形跟着折起来。',
+      run: () => loadBuiltinDemo('fold'),
     },
     {
       title: '正方体：四个问，把功能用满的那道',

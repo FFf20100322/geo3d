@@ -109,6 +109,7 @@ const POINT_KINDS = [
   'projLine',
   'onSegment',
   'inFace',
+  'onArc',
 ] as const
 const CONSTRAINT_KINDS = [
   'distance',
@@ -178,6 +179,20 @@ export function parseScene(raw: unknown): Scene {
         face,
         u: num(p.u ?? 0.5, `点 ${name} 的 u`),
         v: num(p.v ?? 0.5, `点 ${name} 的 v`),
+      })
+    } else if (kind === 'onArc') {
+      // 翻折题的动点：绕一条棱旋转。of 是棱的两个端点，from 是旋转前的那个点。
+      const of = arr(p.of, `点 ${name} 的 of`).map((x) => toDisplayName(str(x, '点名称')))
+      if (of.length !== 2) throw new SceneError(`点 ${name} 的 of 应该是旋转轴的两个端点`)
+      for (const k of of) if (!known.has(k)) throw new SceneError(`点 ${name} 引用了还没定义的 ${k}`)
+      const from = toDisplayName(str(p.from, `点 ${name} 的 from`))
+      if (!known.has(from)) throw new SceneError(`点 ${name} 引用了还没定义的 ${from}`)
+      points.push({
+        name,
+        kind: 'onArc',
+        of: of as [string, string],
+        from,
+        angle: num(p.angle ?? 0, `点 ${name} 的 angle`),
       })
     } else if (kind === 'perpFoot' || kind === 'projLine') {
       const want = kind === 'perpFoot' ? 4 : 3

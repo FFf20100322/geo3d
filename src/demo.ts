@@ -138,6 +138,80 @@ export const DEMO_SOLUTION = {
 }
 
 /**
+ * 内置测试题之三：**翻折** —— 平行四边形 ABCD 沿对角线 BC 把 D 折起来。
+ *
+ * 这是用户点名要的题型：「把一个面翻折成一个立体图形」。
+ * 关键在那个动点 D₂：它**不是在线段上滑，也不是在面里滑**，而是绕棱 BC 转 ——
+ * 走的是一段圆弧，起点是原来的 D，终点是折到底之后的位置。
+ * 所以它单独用 onArc 这一类点，拖动时改的是角度。
+ */
+export const FOLD_PROBLEM = `在平行四边形 ABCD 中，AB = BC = 2，∠ABC = 90°。把平行四边形沿对角线 BC 折起，
+使点 D 离开原来的平面，折起之后的点记作 D₂。
+（1）当二面角 A-BC-D₂ 为 90° 时，求 A、D₂ 两点间的距离；
+（2）求 A、D₂ 两点间距离的取值范围。`
+
+export const FOLD_SCENE = {
+  points: [
+    { name: 'A', kind: 'free', at: [0, 0, 0] },
+    { name: 'B', kind: 'free', at: [2, 0, 0] },
+    { name: 'C', kind: 'free', at: [2, 0, 2] },
+    // D 由平移派生：四边形 ABCD 是平行四边形，D = A + C − B
+    { name: 'D', kind: 'offset', of: ['A', 'C', 'B'] },
+    // ↓ 翻折的那个动点：绕棱 BC 转，起点是 D。拖动时改的是 angle。
+    { name: 'D2', kind: 'onArc', of: ['B', 'C'], from: 'D', angle: 90 },
+  ],
+  constraints: [
+    { kind: 'distance', a: 'A', b: 'B', value: 2 },
+    { kind: 'distance', a: 'B', b: 'C', value: 2 },
+    { kind: 'angle', at: 'B', from: 'A', to: 'C', value: 90 },
+  ],
+  edges: [
+    ['A', 'B'],
+    ['B', 'C'],
+    ['C', 'D2'],
+    ['D2', 'A'],
+    ['A', 'C'],
+    ['C', 'D'],
+    ['D', 'A'],
+  ],
+  faces: [
+    // 折起来之后的那一块（三角形 BCD₂）
+    ['B', 'C', 'D2'],
+    // 原来平放的那一块
+    ['A', 'B', 'C', 'D'],
+  ],
+}
+
+export const FOLD_SOLUTION = {
+  steps: [
+    {
+      title: '先把平行四边形摆出来',
+      text: 'AB = BC = 2，∠ABC = 90°，所以 ABCD 是一个正方形。',
+      why: '平行四边形的对边平行且相等',
+      q: '0',
+      addPoints: [],
+      addEdges: [['A', 'B'], ['B', 'C'], ['C', 'D'], ['D', 'A'], ['A', 'C']],
+      uses: ['ABCD', 'A', 'B', 'C'],
+    },
+    {
+      title: '把 D 绕 BC 折起来',
+      text: 'D 绕着 BC 这条轴旋转 —— 它走的是一段圆弧，圆心在 BC 上，半径是 D 到 BC 的距离。拖那个橙色的 D₂ 就能看到它沿弧滑动。',
+      why: '翻折就是绕棱旋转',
+      q: '0',
+      addPoints: [{ name: 'D2', kind: 'onArc', of: ['B', 'C'], from: 'D', angle: 90 }],
+      addEdges: [['C', 'D2'], ['D2', 'A']],
+      uses: ['D2', 'BC'],
+    },
+  ],
+  answers: [
+    { label: '（1）二面角为 90° 时 |AD₂|', value: '2√3' },
+    { label: '（2）|AD₂| 的取值范围', value: '[2√2 − 2, 2√2 + 2]' },
+  ],
+  angles: [{ kind: 'dihedral', edge: ['B', 'C'], inA: 'A', inB: 'D2', label: '二面角 A-BC-D₂', value: '1', of: 'cos' }],
+  lengths: [{ p: ['A', 'D2'], label: 'AD₂' }],
+}
+
+/**
  * 走真实建模流程的第二道题：**带动点**，用来验「三种解题法在动点上能不能实时更新」。
  *
  * 与 FULL_* 那道内置题的区别很重要：
