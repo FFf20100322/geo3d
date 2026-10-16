@@ -32,6 +32,8 @@ import {
   type AngleSpec,
   type AnnotationShape,
 } from './annotation'
+// .g3d 打包：把一道题连同原图、题面、解答、3D 一起存成一个文件，可以发给别人
+import { buildG3d, parseG3d, suggestFileName } from './g3d'
 import { createHistory, type HistoryRecord } from './history'
 import {
   DEMO_PROBLEM,
@@ -1417,13 +1419,92 @@ function renderHistory() {
     }
     row.appendChild(del)
 
+    // 「导出」把这道题打包成 .g3d —— 原图、题面、解答、3D 全在里面，
+    // 发给别人或存到电脑上，以后都能原样打开。
+    const exp = document.createElement('button')
+    exp.className = 'hdel'
+    exp.textContent = '导出'
+    exp.onclick = (ev) => {
+      ev.stopPropagation()
+      void exportG3d(r)
+    }
+    row.appendChild(exp)
+
     row.onclick = () => openRecord(r)
     list.appendChild(row)
   }
 }
 
-/** 打开一条存档。有场景就直接进 3D，没有就回到文字页。 */
-function openRecord(r: HistoryRecord) {
+/**
+ * 把一道题存成 `.g3d` 文件。
+ *
+ * **能用系统的「另存为」就用**（`showSaveFilePicker`），用户可以自己挑文件夹 ——
+ * 但它在手机上要看浏览器版本（Chrome for Android 要到 154 才有），所以不能指望它。
+ * 用不了就退回下载：浏览器会把文件放进「下载」文件夹，**那也是一个真实的手机文件夹**。
+ *
+ * 这两条路都不需要任何特殊权限。至于「一键跳到文件管理器」——
+ * **网页做不到**（网页不能启动别的 App），那条得等打包成 APK 之后再说。
+ */
+async function exportG3d(rec: HistoryRecord): Promise<void> {
+  // 不带软件版本号：那只是为了排查问题用的，为它专门注入一个构建期常量不划算
+  const text = buildG3d(rec)
+  const name = suggestFileName(rec)
+  const blob = new Blob([text], { type: 'application/json' })
+  try {
+    const picker = (window as unknown as { showSaveFilePicker?: (o: unknown) => Promise<FileSystemFileHandle> })
+      .showSaveFilePicker
+    if (picker) {
+      const handle = await picker({
+        suggestedName: name,
+        types: [{ description: 'Geo3D 题目', accept: { 'application/json': ['.g3d'] } }],
+      })
+      const w = await handle.createWritable()
+      await w.write(blob)
+      await w.close()
+      say(`已保存：${name}`, 'ok')
+      return
+    }
+  } catch (e) {
+    // 用户点了取消不算错，别去烦他
+    if (e instanceof DOMException && e.name === 'AbortError') return
+    // 别的错（比如浏览器不支持这个格式的参数）就退回下载
+  }
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = name
+  a.click()
+  // 立刻撤销会让部分浏览器来不及下载，等一会儿再放掉
+  setTimeout(() => URL.revokeObjectURL(url), 10000)
+  say(`已导出到「下载」：${name}`, 'ok')
+}
+
+/** 从 `.g3d` 文件导入一道题。文件读坏了一律拒绝，不硬收半个题。 */
+function importG3d(): void {
+  const input = document.createElement('input')
+  input.type = 'file'
+  input.accept = '.g3d,application/json'
+  input.onchange = () => {
+    const file = input.files?.[0]
+    if (!file) return
+    const fr = new FileReader()
+    fr.onerror = () => say('这个文件读不出来。', 'err')
+    fr.onload = () => {
+      try {
+        const rec = parseG3d(String(fr.result ?? ''))
+        const saved = history.save(rec)
+        renderHistory()
+        say(`已导入：${saved.problemText.slice(0, 20)}…`, 'ok')
+      } catch (e) {
+        say(e instanceof Error ? e.message : '导入失败', 'err')
+      }
+    }
+    fr.readAsText(file)
+  }
+  input.click()
+}
+
+/** 打开一条存档。有场景就直接进 3D，没有就回到文字页。 */function openRecord(r: HistoryRecord) {
   $<HTMLTextAreaElement>('problem-text').value = r.problemText
   $<HTMLTextAreaElement>('extra').value = r.extra
   $('points').textContent = ''
@@ -1477,6 +1558,9 @@ $('btn-clear-history').onclick = () => {
   history.clear()
   renderHistory()
 }
+
+// 导入 .g3d：别人发来的题目文件、或者自己从电脑上存回来的
+$('btn-import-g3d').onclick = () => importG3d()
 
 /**
  * 建图。这是整条链路的总闸门：

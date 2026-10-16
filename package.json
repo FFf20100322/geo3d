@@ -1,14 +1,14 @@
 {
   "name": "geo3d",
   "private": true,
-  "version": "0.9.2",
+  "version": "0.9.3",
   "type": "module",
   "description": "Geo3D —— 高中立体几何的 3D 解题与演示：拍照或直接输入题目，本地算出立体图形并逐条回验，给出分步解答与可交互 3D 模型",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
-    "check": "node src/geo.check.ts && node src/solver.check.ts && node src/text.check.ts && node src/scene.check.ts && node src/history.check.ts && node src/solution.check.ts && node src/demo.check.ts && node src/drag.check.ts && node src/symbolic.check.ts && node src/angle.check.ts && node src/annotation.check.ts && node src/elements.check.ts && node src/solids.check.ts && tsc --noEmit",
+    "check": "node src/geo.check.ts && node src/solver.check.ts && node src/text.check.ts && node src/scene.check.ts && node src/history.check.ts && node src/solution.check.ts && node src/demo.check.ts && node src/drag.check.ts && node src/symbolic.check.ts && node src/angle.check.ts && node src/annotation.check.ts && node src/elements.check.ts && node src/solids.check.ts && node src/g3d.check.ts && tsc --noEmit",
     "preview": "vite preview",
     "backup": "node tools/backup.mjs"
   },
