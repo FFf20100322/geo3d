@@ -40,11 +40,11 @@ import {
   FOLD_SCENE,
   FOLD_SOLUTION,
   FULL_SOLUTION,
-  SOLID_TEMP_PROBLEM,
-  SOLID_TEMP_SCENE,
   MOVING_PROBLEM,
   REALFLOW_PROBLEM,
 } from './demo'
+// 【临时测试】用完就删：temptest.ts，连同本文件里所有 temptest 分支与那两条列表项一起删
+import { T1_PROBLEM, T1_SCENE, T2_PROBLEM, T2_SCENE, T2_SOLUTION } from './temptest'
 import {
   checkFacesPlanar,
   edgeKey,
@@ -1156,15 +1156,17 @@ $('btn-repick').onclick = () => {
  * - `cube` 棱长 2 的正方体：四边形面、全部 8 种点类型与 8 种约束、四个问、
  *   辅助点是**由解答一步步加出来的**（所以播放器有东西可以揭示）。
  */
-function loadBuiltinDemo(which: 'tetra' | 'cube' | 'fold' | 'solidtemp' = 'tetra'): void {
+function loadBuiltinDemo(which: 'tetra' | 'cube' | 'fold' | 't1' | 't2' = 'tetra'): void {
   const [problem, sceneSrc, solutionSrc] =
     which === 'cube'
       ? [FULL_PROBLEM, FULL_SCENE, FULL_SOLUTION]
       : which === 'fold'
         ? [FOLD_PROBLEM, FOLD_SCENE, FOLD_SOLUTION]
-        : which === 'solidtemp'
-          ? [SOLID_TEMP_PROBLEM, SOLID_TEMP_SCENE, { steps: [], answers: [], angles: [], lengths: [] }]
-          : [DEMO_PROBLEM, DEMO_SCENE, DEMO_SOLUTION]
+        : which === 't1'
+          ? [T1_PROBLEM, T1_SCENE, { steps: [], answers: [], angles: [], lengths: [] }]
+          : which === 't2'
+            ? [T2_PROBLEM, T2_SCENE, T2_SOLUTION]
+            : [DEMO_PROBLEM, DEMO_SCENE, DEMO_SOLUTION]
   $<HTMLTextAreaElement>('problem-text').value = problem
   $<HTMLTextAreaElement>('extra').value = ''
   $('points').textContent = ''
@@ -1273,10 +1275,16 @@ function importedItems(): { title: string; desc: string; run: () => void }[] {
       run: () => startRealFlow(MOVING_PROBLEM),
     },
     {
-      // 【临时测试】曲面立体的线框。验完连同 demo.ts 里的 SOLID_TEMP_* 一起删掉。
-      title: '【临时测试】球、圆柱、圆锥',
-      desc: '只用来验曲面立体的线框画得对不对，验完会删掉。',
-      run: () => loadBuiltinDemo('solidtemp'),
+      // 【临时测试】用完就删（连 temptest.ts 一起）
+      title: '【临时测试】T1 曲面立体',
+      desc: '球、椭球、圆柱、圆锥、圆台各一个。看线框画得对不对、位置对不对。',
+      run: () => loadBuiltinDemo('t1'),
+    },
+    {
+      // 【临时测试】用完就删
+      title: '【临时测试】T2 每问独有的条件',
+      desc: '三棱锥 R-EFG。看第（1）问的 L 能拖动、第（2）问的 L 被钉在中点。',
+      run: () => loadBuiltinDemo('t2'),
     },
     {
       title: '翻折：平行四边形沿对角线折起',

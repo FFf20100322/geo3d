@@ -4,6 +4,8 @@ import { CSS2DObject, CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRe
 import { EDGES, FACES, VERTICES, selfCheck } from './geo'
 import { planeNormal } from './angle'
 import { edgeKey, type Renderable } from './scene'
+// 曲面立体的摆放数学（纯函数，能在电脑上单独验）—— 这里只调用，不自己算
+import { solidPlacement } from './solids.ts'
 import type { Ray } from './drag'
 import type { AnnotationShape } from './annotation'
 import type { Vec3 } from './solver'
@@ -189,72 +191,31 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
   /**
    * 画一个曲面立体。
    *
-   * 都用 three 自带的几何体，只是**摆到正确的位置和朝向上**：
-   * 自带几何体都是「贴着坐标轴、以原点为中心」的，所以要么平移、要么转一下。
-   * 椭球麻烦一点：三条半轴一般不在坐标轴上，得按它们**现搭一个基**。
+   * **摆放数学在 `solids.ts` 里** —— 那是纯函数，能在电脑上单独验
+   * （`solids.check.ts` 会把矩阵作用到几何体的端点上，看落点对不对）。
+   * 这里只负责把算好的参数变成 three 的几何体。分割线就在这里：
+   * **一旦发现想在这边算位置或角度，那就该挪到 solids.ts 去**，否则自检覆盖不到它。
    */
   function addSolid(s: NonNullable<Renderable['solids']>[number]): void {
-    const wire = (geo: THREE.BufferGeometry, m: THREE.Matrix4) => {
-      const line = new THREE.LineSegments(new THREE.WireframeGeometry(geo), matSolid)
-      line.applyMatrix4(m)
-      solidGroup.add(line)
-      geo.dispose()
-    }
-    const V = (p: Vec3) => new THREE.Vector3(p[0], p[1], p[2])
-    // 把「沿 y 轴、高 h、以原点为中心」的几何体摆成「从 a 到 b」
-    const placeAlong = (a: Vec3, b: Vec3, rTop: number, rBot: number) => {
-      const va = V(a)
-      const vb = V(b)
-      const axis = new THREE.Vector3().subVectors(vb, va)
-      const h = axis.length()
-      if (h < 1e-9) return
-      const geo = new THREE.CylinderGeometry(rTop, rBot, h, 32, 1, true)
-      // 默认沿 +y；把它转到轴的方向
-      const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), axis.clone().normalize())
-      const mid = new THREE.Vector3().addVectors(va, vb).multiplyScalar(0.5)
-      wire(geo, new THREE.Matrix4().compose(mid, q, new THREE.Vector3(1, 1, 1)))
-    }
-
-    if (s.kind === 'sphere' && s.center && s.radius) {
-      wire(new THREE.SphereGeometry(s.radius, 28, 18), new THREE.Matrix4().makeTranslation(...s.center))
-    } else if (s.kind === 'ellipsoid' && s.center && s.ax && s.ay && s.az) {
-      // 三条半轴现搭一个基。它们一般不互相垂直，所以这里**正交化**一下 ——
-      // 画出来仍然是那个椭球的形状，只是取了一个干净的坐标架。
-      const c = V(s.center)
-      const u = new THREE.Vector3().subVectors(V(s.ax), c)
-      const v = new THREE.Vector3().subVectors(V(s.ay), c)
-      const w = new THREE.Vector3().subVectors(V(s.az), c)
-      const ru = u.length() || 1
-      const rv = v.length() || 1
-      const rw = w.length() || 1
-      // 施密特正交化：u 不动，v 去掉 u 方向的分量，w 去掉 u、v 方向的分量
-      u.normalize()
-      v.addScaledVector(u, -v.dot(u)).normalize()
-      w.addScaledVector(u, -w.dot(u)).addScaledVector(v, -w.dot(v)).normalize()
-      const m = new THREE.Matrix4().makeBasis(u, v, w)
-      m.setPosition(c)
-      m.multiply(new THREE.Matrix4().makeScale(ru, rv, rw))
-      wire(new THREE.SphereGeometry(1, 28, 18), m)
-    } else if (s.kind === 'cylinder' && s.a && s.b && s.radius) {
-      placeAlong(s.a, s.b, s.radius, s.radius)
-    } else if (s.kind === 'frustum' && s.a && s.b && s.radiusA && s.radiusB) {
-      placeAlong(s.a, s.b, s.radiusA, s.radiusB)
-    } else if (s.kind === 'cone' && s.apex && s.center && s.radius) {
-      // 圆锥：顶点在 apex，底面圆心在 center。自带的圆锥底面在 −h/2，所以轴要从
-      // 底面的对称位置算起 —— 直接用 placeAlong 会短一半。
-      const apex = V(s.apex)
-      const base = V(s.center)
-      const h = new THREE.Vector3().subVectors(apex, base).length()
-      if (h < 1e-9) return
-      const geo = new THREE.ConeGeometry(s.radius, h, 32, 1, true)
-      // 底面在 −h/2、顶点在 +h/2，所以中心要落在 apex 与 base 的中点
-      const mid = new THREE.Vector3().addVectors(apex, base).multiplyScalar(0.5)
-      const q = new THREE.Quaternion().setFromUnitVectors(
-        new THREE.Vector3(0, 1, 0),
-        new THREE.Vector3().subVectors(apex, base).normalize(),
-      )
-      wire(geo, new THREE.Matrix4().compose(mid, q, new THREE.Vector3(1, 1, 1)))
-    }
+    const placed = solidPlacement(s)
+    if (!placed) return // 退化的情况（轴两端重合、半轴共线等）跳过，不画一个错的
+    const geo =
+      placed.geometry === 'sphere'
+        ? new THREE.SphereGeometry(placed.params.radius ?? 1, 28, 18)
+        : placed.geometry === 'cone'
+          ? new THREE.ConeGeometry(placed.params.radius ?? 1, placed.params.height ?? 1, 32, 1, true)
+          : new THREE.CylinderGeometry(
+              placed.params.radiusTop ?? 1,
+              placed.params.radiusBottom ?? 1,
+              placed.params.height ?? 1,
+              32,
+              1,
+              true,
+            )
+    const line = new THREE.LineSegments(new THREE.WireframeGeometry(geo), matSolid)
+    line.applyMatrix4(placed.matrix)
+    solidGroup.add(line)
+    geo.dispose()
   }
 
   function setScene(r: Renderable) {
