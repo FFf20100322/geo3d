@@ -124,6 +124,14 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
   const v3 = ([x, y, z]: [number, number, number]) => new THREE.Vector3(x, y, z)
   const matEdge = new THREE.LineBasicMaterial({ color: 0xdfe6f2 })
   const matAux = new THREE.LineDashedMaterial({ color: 0x7dd3a0, dashSize: 0.18, gapSize: 0.12 })
+  /**
+   * 被挡住的棱：灰虚线。
+   *
+   * 这是课本画立体图的规矩 —— 看得见的画实线、看不见的画虚线，
+   * 不然一张图里哪条棱在前面、哪条在后面根本分不出来。
+   * 判据是「含这条棱的所有面是不是都背对相机」：只要还有一个面朝向相机，它就看得见。
+   */
+  const matHidden = new THREE.LineDashedMaterial({ color: 0x7c8798, dashSize: 0.16, gapSize: 0.14 })
   const matHl = new THREE.LineBasicMaterial({ color: 0xffd166 })
 
   let edgeObjects = new Map<string, THREE.LineSegments>()
@@ -202,7 +210,9 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
     for (const e of r.edges) {
       const geo = new THREE.BufferGeometry().setFromPoints([v3(e.a), v3(e.b)])
       const line = new THREE.LineSegments(geo, e.aux ? matAux : matEdge)
-      if (e.aux) line.computeLineDistances()
+      // 距离信息一律算好：任何一条棱都可能临时换成虚线材质（被遮挡时），
+      // 那时候没有距离信息虚线就画不出来。
+      line.computeLineDistances()
       group.add(line)
       edgeObjects.set(e.key, line)
     }
@@ -280,11 +290,8 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
   }
 
   function setHighlight(hl: Highlight | null) {
-    for (const [key, line] of edgeObjects) {
-      const on = hl?.edges.has(key) ?? false
-      // 高亮的优先于辅助线的绿色，但隐藏状态仍然是隐藏
-      line.material = on ? matHl : auxEdges.has(key) ? matAux : matEdge
-    }
+    highlightNow = hl
+    applyEdgeStyles()
     for (const [name, obj] of vertexObjects) {
       obj.element.classList.toggle('hl', hl?.points.has(name) ?? false)
     }
@@ -294,6 +301,66 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
       const mat = entry.mesh.material as THREE.MeshBasicMaterial
       mat.color.setHex(on ? 0xffd166 : entry.color)
       mat.opacity = on ? 0.46 : 0.22
+    }
+  }
+
+  /** 当前的高亮状态，改遮挡样式时要一并考虑 */
+  let highlightNow: Highlight | null = null
+
+  /**
+   * 按「高亮 / 辅助线 / 被遮挡 / 普通」四选一给每条棱定材质。
+   * 顺序体现优先级：高亮最优先（用户正看着它），其次是辅助线的绿色，
+   * 再到被遮挡的灰虚线，最后是普通实线。
+   */
+  function applyEdgeStyles(): void {
+    for (const [key, line] of edgeObjects) {
+      const on = highlightNow?.edges.has(key) ?? false
+      line.material = on ? matHl : auxEdges.has(key) ? matAux : hiddenEdges.has(key) ? matHidden : matEdge
+    }
+  }
+
+  /** 被挡住的棱（含它的面全都背对相机）。每一帧重算一次，转视角时才会跟着变。 */
+  const hiddenEdges = new Set<string>()
+  function computeHiddenEdges(): void {
+    // 每条棱被哪些面用着
+    const owners = new Map<string, string[][]>()
+    for (const entry of faceObjects.values()) {
+      const pts = entry.pts
+      for (let i = 0; i < pts.length; i++) {
+        const ek = edgeKey(pts[i], pts[(i + 1) % pts.length])
+        if (!owners.has(ek)) owners.set(ek, [])
+        owners.get(ek)?.push(entry.pts)
+      }
+    }
+    const cam = camera.position
+    const next = new Set<string>()
+    for (const [ek, faces] of owners) {
+      const facing = faces.some((pts) => {
+        // 面的法向用前三个点算；再看向着相机还是背着
+        const a = positions[pts[0]]
+        const b = positions[pts[1]]
+        const c = positions[pts[2]]
+        if (!a || !b || !c) return true
+        const n = planeNormal(a, b, c)
+        if (!n) return true
+        // 把法向翻到与「面的中心指向相机」同侧，再看它和视线是锐角还是钝角
+        const cx = (a[0] + b[0] + c[0]) / 3
+        const cy = (a[1] + b[1] + c[1]) / 3
+        const cz = (a[2] + b[2] + c[2]) / 3
+        const vx = cam.x - cx
+        const vy = cam.y - cy
+        const vz = cam.z - cz
+        return n[0] * vx + n[1] * vy + n[2] * vz > 0
+      })
+      if (!facing) next.add(ek)
+    }
+    // 只在真的变了的时候改材质 —— 每帧重设材质会让 three 反复重编译
+    let changed = next.size !== hiddenEdges.size
+    if (!changed) for (const k of next) if (!hiddenEdges.has(k)) { changed = true; break }
+    if (changed) {
+      hiddenEdges.clear()
+      for (const k of next) hiddenEdges.add(k)
+      applyEdgeStyles()
     }
   }
 
@@ -825,6 +892,9 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
     controls.update()
     renderer.render(scene, camera)
     labelRenderer.render(scene, camera)
+    // 遮挡判定要跟着相机走：转视角时哪些棱被挡住是会变的。
+    // 它内部只在结果真的变了才动材质，所以每帧调用不心疼。
+    computeHiddenEdges()
     // 标注的摆放不每帧算：用户要求拖动/旋转过程中不要实时重排，停手之后算一次就行。
     // 这样转起来顺，也不会看到标注在转动过程中乱跳。
     if (labelsDirty) {
