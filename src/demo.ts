@@ -324,6 +324,36 @@ export const FULL_SOLUTION = {
       uses: ['EF', 'E', 'F'],
     },
     {
+      title: '第（4）问·向量法：把 EF 当成向量',
+      text: 'E 在 A₁B₁ 上、F 在底面内，EF 就是从 E 指向 F 的向量。它竖直方向上的分量正好是 2，所以长度至少是 2；E 与 F 上下对齐时取到 2。',
+      why: '两点间距离就是差向量的模',
+      q: '4',
+      via: '向量法',
+      addPoints: [],
+      addEdges: [['E', 'F']],
+      uses: ['EF', 'E', 'F'],
+    },
+    {
+      title: '第（4）问·基底法：用三条棱当基底',
+      text: '取 AB、AD、AA₁ 作基底。E = AA₁ + AB + t·AB 的方向上是确定的，F 在底面内所以没有 AA₁ 分量 —— 两者之差里 AA₁ 的系数恒为 1，模长至少是 2。',
+      why: '基底法把向量拆成三条棱的组合，竖直分量一眼看出',
+      q: '4',
+      via: '基底法',
+      addPoints: [],
+      addEdges: [['E', 'F']],
+      uses: ['EF', 'E', 'F', 'AA1'],
+    },
+    {
+      title: '第（4）问·坐标系法：建系标坐标',
+      text: '以 A 为原点、AB 为 x 轴、AD 为 y 轴、AA₁ 为 z 轴。E 的 z 坐标恒为 1（在顶面上），F 的 z 坐标恒为 0，所以两点距离的平方里 z 方向就贡献 1，距离至少是 1 个单位 —— 换成棱长就是 2。',
+      why: '建系之后竖直方向的差一眼看出',
+      q: '4',
+      via: '坐标系法',
+      addPoints: [],
+      addEdges: [['E', 'F']],
+      uses: ['EF', 'E', 'F', 'A'],
+    },
+    {
       title: '附带：点 A 到平面 A₁BD 的距离',
       q: '0',
       text: 'N 是 A 在平面 A₁BD 上的垂足。对角线 AC₁ 垂直于平面 A₁BD，所以这条距离等于 AC₁ 的三分之一，即 2√3/3。',
@@ -342,6 +372,25 @@ export const FULL_SOLUTION = {
     { label: '（3）A₁G 与底面所成角的正弦', value: '1/3' },
     { label: '（4）EF 的最小值', value: '2' },
   ],
+  /**
+   * 三种解题法各自要在图上画出来的东西。
+   *
+   * 用一个 arrows 数组装三种用途，靠 color 区分：
+   * - **yellow** = 向量法的向量（一律带箭头，用户明确要求）
+   * - **blue** = 基底法的基底（与黄色区分开；坐标系法的三个轴也用蓝色）
+   * 坐标系另由 frame 描述：原点 + 三个轴上的点，程序据此**自己算出每个点的坐标**，
+   * 不让模型报坐标 —— 那是它最容易报错、而本地算完全免费的东西。
+   */
+  arrows: [
+    // 向量法：把 EF 本身当成向量画出来
+    { from: 'E', to: 'F', label: 'EF', color: 'yellow' },
+    { from: 'E', to: 'A1', label: 'EA₁', color: 'yellow' },
+    // 基底法：以 AB、AD、AA₁ 为基底（蓝色，和黄色的向量分开）
+    { from: 'A', to: 'B', label: 'AB', color: 'blue' },
+    { from: 'A', to: 'D', label: 'AD', color: 'blue' },
+    { from: 'A', to: 'A1', label: 'AA₁', color: 'blue' },
+  ],
+  frame: { origin: 'A', x: 'B', y: 'D', z: 'A1' },
   angles: [
     { kind: 'lineLine', p: ['A1', 'B'], q: ['B1', 'C'], label: 'A₁B 与 B₁C 所成角', value: '60°', of: 'degrees' },
     { kind: 'dihedral', edge: ['B', 'D'], inA: 'A1', inB: 'A', label: '二面角 A₁-BD-A', value: '√3/3', of: 'cos' },

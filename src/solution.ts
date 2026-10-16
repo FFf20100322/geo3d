@@ -56,6 +56,20 @@ export interface Step {
 export interface Solution {
   steps: Step[]
   answers: { label: string; value: string }[]
+  /**
+   * 要画出来的箭头。三类东西共用这一个字段：
+   * - **向量法**的向量：黄色
+   * - **基底法**的基底：蓝色（要和黄色区分开）
+   * - **坐标系法**的三个坐标轴：蓝色
+   * 所以不必为三种方法各造一套数据结构。
+   */
+  arrows?: { from: string; to: string; label?: string; color?: 'yellow' | 'blue' }[]
+  /**
+   * 坐标系法的空间直角坐标系：原点 + 三个轴上的单位点。
+   * 给了它，程序就能**自己算出每个点的坐标**，不必让模型逐个报坐标
+   * （模型报坐标容易错，而我们本来就有坐标 —— 自己算是免费的）。
+   */
+  frame?: { origin: string; x: string; y: string; z: string }
   /** 这道题涉及、需要画弧标注的角度 */
   angles: AngleSpec[]
   /** 需要在线段上标出来的长度 */
@@ -263,7 +277,30 @@ export function parseSolution(raw: unknown, scene: Scene): Solution {
     return { p: p as [string, string], label, value }
   })
 
-  return { steps, answers, angles, lengths }
+  // 箭头与坐标系：都是可选的，只有「三种解题法」那类题才给。
+  // 引用的点必须在图上真的存在，所以这里用 ref 逐个数过一遍 ——
+  // 写错了要当场报出来，不能让它在渲染层悄悄画不出来。
+  const arrows = arr(raw.arrows ?? [], 'arrows').map((x, i) => {
+    if (!isObj(x)) throw new SolutionError(`第 ${i + 1} 个箭头不是对象`)
+    const from = ref(x.from, '箭头的起点')
+    const to = ref(x.to, '箭头的终点')
+    const color: 'yellow' | 'blue' = x.color === 'blue' ? 'blue' : 'yellow'
+    const label = typeof x.label === 'string' ? readable(x.label) : undefined
+    return { from, to, label, color }
+  })
+
+  let frame: { origin: string; x: string; y: string; z: string } | undefined
+  if (raw.frame !== undefined) {
+    if (!isObj(raw.frame)) throw new SolutionError('frame 不是一个对象')
+    frame = {
+      origin: ref(raw.frame.origin, '坐标系原点'),
+      x: ref(raw.frame.x, 'x 轴上的点'),
+      y: ref(raw.frame.y, 'y 轴上的点'),
+      z: ref(raw.frame.z, 'z 轴上的点'),
+    }
+  }
+
+  return { steps, answers, angles, lengths, arrows, frame }
 }
 
 /** 把解题过程里逐步新增的辅助元素并进场景，得到「带辅助线的完整图形」 */

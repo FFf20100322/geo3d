@@ -266,6 +266,9 @@ function refreshAnnotations(): void {
     })
   }
 
+  // 三种解题法的箭头与坐标标签也在这里一起算
+  scene?.setArrows(methodArrows())
+  currentAnnotations.push(...coordAnnotations())
   scene?.setAnnotations(shownAnnotations())
   annotDoubts = doubts
   updateAnnotButton()
@@ -1877,6 +1880,95 @@ function afterPick(): void {
     say(`正在用「${viaPick}」重算一遍解题过程…`)
     void generateSolution(btn, viaPick).catch((e) => say(`重算失败：${message(e)}`, 'err'))
   }
+}
+
+/**
+ * 三种解题法各自要在图上画出来的东西。
+ *
+ * - **向量法**：黄色的向量，**一律带箭头**（解答里 arrows 标 yellow 的那些）
+ * - **基底法**：蓝色的基底向量（arrows 标 blue 的那些），与黄色的向量区分开
+ * - **坐标系法**：蓝色的三个坐标轴（frame 里的原点 + 三个轴上点），
+ *   并且**把点的坐标标出来** —— 坐标是程序自己算的，不让模型报（它能报错，我们算不会）
+ */
+function methodArrows(): { from: string; to: string; color: 'yellow' | 'blue'; label?: string }[] {
+  const sol = currentSolution
+  if (!sol) return []
+  if (viaPick === '坐标系法') {
+    const f = sol.frame
+    if (!f) return []
+    // 空间直角坐标系：从原点出发的三条轴，都用蓝色，**各自标上 x / y / z** ——
+    // 不标的话看图的人根本分不出哪条是哪条。
+    return [
+      { from: f.origin, to: f.x, color: 'blue' as const, label: 'x' },
+      { from: f.origin, to: f.y, color: 'blue' as const, label: 'y' },
+      { from: f.origin, to: f.z, color: 'blue' as const, label: 'z' },
+    ]
+  }
+  const all = sol.arrows ?? []
+  const pick = (a: { color?: 'yellow' | 'blue' }) => a.color ?? 'yellow'
+  if (viaPick === '向量法')
+    return all.filter((a) => pick(a) === 'yellow').map((a) => ({ from: a.from, to: a.to, color: 'yellow' as const, label: a.label }))
+  if (viaPick === '基底法')
+    return all.filter((a) => a.color === 'blue').map((a) => ({ from: a.from, to: a.to, color: 'blue' as const, label: a.label }))
+  return all.map((a) => ({ from: a.from, to: a.to, color: pick(a), label: a.label }))
+}
+
+/**
+ * 坐标系法要把点的坐标标出来。
+ * 「重要」档只标**这一问真正用到的**点；「全部」档把图上有字母的点全标上 —— 这是用户定的。
+ */
+function coordAnnotations(): { shape: AnnotationShape; kind: string; tier: 1 | 2 }[] {
+  const sol = currentSolution
+  const f = sol?.frame
+  if (viaPick !== '坐标系法' || !f || !currentSolvedAll) return []
+  const o = currentSolvedAll[f.origin]
+  const ax = currentSolvedAll[f.x]
+  const ay = currentSolvedAll[f.y]
+  const az = currentSolvedAll[f.z]
+  if (!o || !ax || !ay || !az) return []
+
+  // 三条轴上的点各代表一个单位方向。用它们把任意点表示成 (u, v, w)。
+  const sub = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+  const e1 = sub(ax, o)
+  const e2 = sub(ay, o)
+  const e3 = sub(az, o)
+  // 解 3×3 线性方程组：p − o = u·e1 + v·e2 + w·e3（用克拉默法则，够用且不用引库）
+  const det3 = (a: Vec3, b: Vec3, c: Vec3) =>
+    a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0]) + a[2] * (b[0] * c[1] - b[1] * c[0])
+  const D = det3(e1, e2, e3)
+  if (Math.abs(D) < 1e-9) return []
+  const coordOf = (p: Vec3): Vec3 | null => {
+    const d = sub(p, o)
+    const u = det3(d, e2, e3) / D
+    const v = det3(e1, d, e3) / D
+    const w = det3(e1, e2, d) / D
+    return [u, v, w]
+  }
+
+  // 「全部」档标图上有字母的点；「重要」档只标本问用到的
+  const coordinateTierAll = annotMode === 2
+  const view = viewSolution(sol)
+  const used = new Set<string>()
+  for (const s of view.steps) for (const p of s.uses.points) used.add(p)
+  const names = Object.keys(currentSolvedAll).filter((n) => coordinateTierAll || used.has(n))
+
+  const out: { shape: AnnotationShape; kind: string; tier: 1 | 2 }[] = []
+  for (const n of names) {
+    const p = currentSolvedAll[n]
+    const c = coordOf(p)
+    if (!c) continue
+    const fmt = (x: number) => {
+      const r = Math.round(x * 1000) / 1000
+      return Number.isInteger(r) ? String(r) : String(r)
+    }
+    out.push({
+      // 坐标标签没有弧，只有文字 —— arc 给空数组即可
+      shape: { arc: [], extras: [], labelAt: p, text: `${n}(${fmt(c[0])}, ${fmt(c[1])}, ${fmt(c[2])})` },
+      kind: 'coord',
+      tier: coordinateTierAll ? 2 : 1,
+    })
+  }
+  return out
 }
 
 function applyStep(): void {

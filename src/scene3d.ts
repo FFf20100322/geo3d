@@ -48,6 +48,11 @@ export interface Scene3d {
   setAnnotations(list: AnnotationShape[]): void
   /** 只挪动若干个点并同步更新连着它们的棱，用来做动点拖动 */
   setPositions(pos: Record<string, Vec3>): void
+  /**
+   * 画/清掉带箭头的矢量。三种解题法共用：
+   * 向量法是黄色的向量，基底法与坐标系法是蓝色的基底与坐标轴。
+   */
+  setArrows(list: { from: string; to: string; color: 'yellow' | 'blue' }[]): void
   /** 允许被手指抓住的点。命中判定用实时坐标，所以拖完之后不用重新登记。 */
   setGrabbables(names: string[]): void
   /**
@@ -313,6 +318,54 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
     for (const [name, obj] of vertexObjects) {
       if (!auxPoints.has(name)) continue
       obj.visible = reveal === null || reveal.points.has(name)
+    }
+  }
+
+  /** 带箭头的矢量。三种解题法共用：向量法黄色，基底法与坐标系法蓝色。 */
+  const arrowGroup = new THREE.Group()
+  scene.add(arrowGroup)
+  const ARROW_COLORS = { yellow: 0xffd166, blue: 0x4f8cff } as const
+
+  /** 箭头尖端的字（坐标轴的 x/y/z），跟着模型一起转，所以挂在 group 下 */
+  let arrowLabels: CSS2DObject[] = []
+
+  function setArrows(list: { from: string; to: string; color: 'yellow' | 'blue'; label?: string }[]): void {
+    // 每次重建最省事：箭头数量很少（顶多几个），而增量更新要维护一堆映射关系，
+    // 那是给几百个对象准备的复杂度，这里用不上。
+    for (const a of [...arrowGroup.children]) arrowGroup.remove(a)
+    for (const l of arrowLabels) l.removeFromParent()
+    arrowLabels = []
+    for (const item of list) {
+      const a = positions[item.from]
+      const b = positions[item.to]
+      if (!a || !b) continue
+      const dir = new THREE.Vector3(b[0] - a[0], b[1] - a[1], b[2] - a[2])
+      const len = dir.length()
+      if (len < 1e-9) continue
+      // 箭头只在尖端一点点就够 —— 能看出方向即可。
+      // 一开始按长度的 28% 做，真机上箭头快赶上杆子长了，像一支飞镖。
+      const head = len * 0.09
+      const arrow = new THREE.ArrowHelper(
+        dir.clone().normalize(),
+        new THREE.Vector3(a[0], a[1], a[2]),
+        len,
+        ARROW_COLORS[item.color],
+        head,
+        head * 0.55,
+      )
+      // 画在图形旁边一点，免得和棱完全重叠、看不出那里有箭头
+      arrow.renderOrder = 2
+      arrowGroup.add(arrow)
+      // 尖端那个字（坐标轴的 x / y / z）。没有它根本分不出哪条轴是哪条。
+      if (item.label) {
+        const el = document.createElement('div')
+        el.className = 'axis-label'
+        el.textContent = item.label
+        const obj = new CSS2DObject(el)
+        obj.position.set(b[0], b[1], b[2])
+        group.add(obj)
+        arrowLabels.push(obj)
+      }
     }
   }
 
@@ -849,6 +902,7 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
     setHighlight,
     setAnnotations,
     setPositions,
+    setArrows,
     setGrabbables: (names) => {
       grabbables = names
     },
