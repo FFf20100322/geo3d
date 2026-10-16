@@ -1893,10 +1893,25 @@ function applyStep(): void {
 
   if (stepProgress < 0 || total === 0) {
     stepIndex = -1
-    scene.setReveal(null)
+    // 「全部」有两种意思，要分清：
+    // - 没选问也没选解法 → 整个解答的辅助线全画出来（setReveal(null)）
+    // - 选了某一问或某种解法 → **只画那一组**用到的东西
+    //
+    // 一开始两种都走 setReveal(null)，后果是**切换问题时图看起来完全没变** ——
+    // 因为不管选哪一问，画出来的都是整个解答的全部辅助线。用户报的就是这个。
+    const filtered = sol !== sol0
+    if (filtered) {
+      const tl = stepTimeline(base, sol)
+      const last = tl.afterStep[sol.steps.length - 1]
+      scene.setReveal(last ? { points: last.points, edges: last.edges } : null)
+    } else {
+      scene.setReveal(null)
+    }
     scene.setHighlight(highlightSets())
     label.textContent = '全部'
-    text.textContent = '已显示全部辅助线。拖上面的滑杆或点「播放」，可以按解题步骤一条条看它们是怎么画出来的。'
+    text.textContent = filtered
+      ? `当前只看这一组（${sol.steps.length} 步）用到的东西。点上面的标签可以换问或换解法。`
+      : '已显示全部辅助线。拖上面的滑杆或点「播放」，可以按解题步骤一条条看它们是怎么画出来的。'
     return
   }
 
