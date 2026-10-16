@@ -65,6 +65,25 @@ export interface Solution {
    */
   arrows?: { from: string; to: string; label?: string; color?: 'yellow' | 'blue' }[]
   /**
+   * **面的法向量**。
+   *
+   * 为什么不并进 arrows：arrows 的两端都是**图上已有的点**，而法向量的尖端
+   * **不是任何一个点** —— 它是按面的三个顶点现算出来的。所以它只能给「哪个面、
+   * 从哪个点出发、多长」，由程序自己算出方向。
+   *
+   * 这样算还有个好处：它跟着动点走 —— 面一动，法向量自动跟着转。
+   */
+  normals?: {
+    /** 用哪三个（或更多）点确定这个面 */
+    face: string[]
+    /** 从哪个点出发画（通常是该面上的一个点） */
+    at: string
+    /** 画多长。不给就按图形大小自己定一个 */
+    length?: number
+    label?: string
+    color?: 'yellow' | 'blue'
+  }[]
+  /**
    * 坐标系法的空间直角坐标系：原点 + 三个轴上的单位点。
    * 给了它，程序就能**自己算出每个点的坐标**，不必让模型逐个报坐标
    * （模型报坐标容易错，而我们本来就有坐标 —— 自己算是免费的）。
@@ -293,6 +312,23 @@ export function parseSolution(raw: unknown, scene: Scene): Solution {
     return { from, to, label, color }
   })
 
+  // 面法向量：引用的点必须都存在，跟别处一样当场查出来，不许静默失配
+  const normals = arr(raw.normals ?? [], 'normals').map((x, i) => {
+    if (!isObj(x)) throw new SolutionError(`第 ${i + 1} 个法向量不是对象`)
+    const face = arr(x.face, `第 ${i + 1} 个法向量的 face`).map((n) => ref(n, '法向量的面'))
+    if (face.length < 3) throw new SolutionError(`第 ${i + 1} 个法向量的面至少要三个点`)
+    const color: 'yellow' | 'blue' = x.color === 'blue' ? 'blue' : 'yellow'
+    const length = x.length === undefined ? undefined : Number(str(x.length, `第 ${i + 1} 个法向量的长度`))
+    if (length !== undefined && !Number.isFinite(length)) throw new SolutionError(`第 ${i + 1} 个法向量的长度不是数`)
+    return {
+      face,
+      at: ref(x.at, `第 ${i + 1} 个法向量的起点`),
+      length,
+      label: typeof x.label === 'string' ? readable(x.label) : undefined,
+      color,
+    }
+  })
+
   let frame: { origin: string; x: string; y: string; z: string; note?: string } | undefined
   if (raw.frame !== undefined) {
     if (!isObj(raw.frame)) throw new SolutionError('frame 不是一个对象')
@@ -306,7 +342,7 @@ export function parseSolution(raw: unknown, scene: Scene): Solution {
     }
   }
 
-  return { steps, answers, angles, lengths, arrows, frame }
+  return { steps, answers, angles, lengths, arrows, normals, frame }
 }
 
 /** 把解题过程里逐步新增的辅助元素并进场景，得到「带辅助线的完整图形」 */

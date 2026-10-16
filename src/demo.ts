@@ -524,6 +524,10 @@ export const FULL_SOLUTION = {
     { from: 'A', to: 'D', label: 'AD', color: 'blue' },
     { from: 'A', to: 'A1', label: 'AA₁', color: 'blue' },
   ],
+  // 面法向量：从 A 出发作底面 ABCD 的法向量 —— 正方体里它正好沿着 AA₁ 方向。
+  // 这是「孤立点 / 不闭合向量 / 面法向量」那一轮要验的东西：
+  // 法向量的尖端**不是图上任何一个点**，是按面算出来的，所以它跟着动点走。
+  normals: [{ face: ['A', 'B', 'C', 'D'], at: 'A', color: 'yellow', label: 'n' }],
   frame: {
     origin: 'A',
     x: 'B',

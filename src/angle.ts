@@ -45,6 +45,29 @@ export function planeNormal(p0: Vec3, p1: Vec3, p2: Vec3): Vec3 | null {
 }
 
 /**
+ * 一个**多边形面**的单位法向量，用 Newell 法。
+ *
+ * 与上面那个的区别：planeNormal 只吃三个点。面有四个以上顶点时，
+ * 「挑前三个做叉积」会踩到「前三点恰好接近共线」的坑 —— 那时方向会乱飞，
+ * 而图上看起来只是「法向量指歪了」，很难怀疑到算法头上。
+ * Newell 把每条边的贡献都算进去，对任意多边形都稳，共线的那几个点也带不歪它。
+ *
+ * 退化（面塌了、所有点共线）返回 null —— 调用方应当跳过，别画一个瞎指的方向。
+ */
+export function polygonNormal(pts: Vec3[]): Vec3 | null {
+  if (pts.length < 3) return null
+  const n: Vec3 = [0, 0, 0]
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i]
+    const b = pts[(i + 1) % pts.length]
+    n[0] += (a[1] - b[1]) * (a[2] + b[2])
+    n[1] += (a[2] - b[2]) * (a[0] + b[0])
+    n[2] += (a[0] - b[0]) * (a[1] + b[1])
+  }
+  return unit(n)
+}
+
+/**
  * 直线与平面的夹角（0 到 90 度）。
  * 做法：线面角的正弦 = 方向向量与法向量夹角的余弦的绝对值。
  * 直线落在平面内时结果是 0，直线垂直平面时是 90。

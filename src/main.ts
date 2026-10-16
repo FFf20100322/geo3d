@@ -14,6 +14,9 @@ import {
 } from './deepseek'
 import { closestParamOnSegment, faceParams, rayPlaneHit, type Ray } from './drag'
 import { buildElements } from './elements'
+// 面法向量的数学在这里（纯函数，能在电脑上单独验）—— 注意是 polygonNormal 不是 planeNormal：
+// 面可能有四个以上顶点，planeNormal 只吃三个点，前三点接近共线时方向会乱飞
+import { polygonNormal } from './angle'
 import {
   arcShape,
   buildAnnotation,
@@ -2027,9 +2030,33 @@ function afterPick(): void {
  * - **坐标系法**：蓝色的三个坐标轴（frame 里的原点 + 三个轴上点），
  *   并且**把点的坐标标出来** —— 坐标是程序自己算的，不让模型报（它能报错，我们算不会）
  */
-function methodArrows(): { from: string; to: string; color: 'yellow' | 'blue'; label?: string; extend?: number }[] {
+function methodArrows(): { from: string | Vec3; to: string | Vec3; color: 'yellow' | 'blue'; label?: string; extend?: number }[] {
   const sol = currentSolution
   if (!sol) return []
+  // **面法向量单独算**，因为它不属于任何一种解法 —— 题目要求画就得画。
+  // 尖端不是图上任何一个点，所以给的是坐标；面一动它自动跟着转。
+  const normalArrows = (): { from: string | Vec3; to: string | Vec3; color: 'yellow' | 'blue'; label?: string }[] => {
+    const P = currentSolvedAll
+    if (!P || !sol.normals?.length) return []
+    // 缺省长度按图形大小定：太短看不出方向，太长会戳出图形老远
+    const scale = suggestRadius(Object.values(P))
+    const out: { from: string | Vec3; to: string | Vec3; color: 'yellow' | 'blue'; label?: string }[] = []
+    for (const nm of sol.normals) {
+      const at = P[nm.at]
+      const pts = nm.face.map((n) => P[n]).filter((p): p is Vec3 => !!p)
+      if (!at || pts.length < 3) continue
+      const nrm = polygonNormal(pts)
+      if (!nrm) continue // 面塌了就算不出法向，跳过，别画一个瞎指的方向
+      const len = nm.length ?? scale * 0.55
+      out.push({
+        from: at,
+        to: [at[0] + nrm[0] * len, at[1] + nrm[1] * len, at[2] + nrm[2] * len],
+        color: nm.color ?? 'yellow',
+        label: nm.label,
+      })
+    }
+    return out
+  }
   if (viaPick === '坐标系法') {
     const f = sol.frame
     if (!f) return []
@@ -2052,10 +2079,14 @@ function methodArrows(): { from: string; to: string; color: 'yellow' | 'blue'; l
   // 文字就正好落到旁边的点上，出现「两个 A₁」「AB 压住 B」这种。
   // 坐标轴的 x / y / z 要留（不标就分不出哪条是哪条），向量的名字不标 —— 图上已经有了。
   if (viaPick === '向量法')
-    return all.filter((a) => pick(a) === 'yellow').map((a) => ({ from: a.from, to: a.to, color: 'yellow' as const }))
+    // 向量法：黄色的向量 + 面法向量（法向量也是向量，只是尖端是算出来的）
+    return [
+      ...all.filter((a) => pick(a) === 'yellow').map((a) => ({ from: a.from, to: a.to, color: 'yellow' as const })),
+      ...normalArrows(),
+    ]
   if (viaPick === '基底法')
     return all.filter((a) => a.color === 'blue').map((a) => ({ from: a.from, to: a.to, color: 'blue' as const }))
-  return all.map((a) => ({ from: a.from, to: a.to, color: pick(a) }))
+  return [...all.map((a) => ({ from: a.from, to: a.to, color: pick(a) })), ...normalArrows()]
 }
 
 /**

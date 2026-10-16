@@ -53,8 +53,12 @@ export interface Scene3d {
   /**
    * 画/清掉带箭头的矢量。三种解题法共用：
    * 向量法是黄色的向量，基底法与坐标系法是蓝色的基底与坐标轴。
+   *
+   * `from`/`to` 可以给**点名**（从当前坐标取），也可以直接给**坐标** ——
+   * 后者是给「面法向量」用的：法向量的尖端**不是图上任何一个点**（它是算出来的），
+   * 所以只能给坐标。给坐标还有个好处：跟着动点走，因为每次重画都会重新算。
    */
-  setArrows(list: { from: string; to: string; color: 'yellow' | 'blue'; label?: string; extend?: number }[]): void
+  setArrows(list: { from: string | Vec3; to: string | Vec3; color: 'yellow' | 'blue'; label?: string; extend?: number }[]): void
   /** 允许被手指抓住的点。命中判定用实时坐标，所以拖完之后不用重新登记。 */
   setGrabbables(names: string[]): void
   /**
@@ -383,15 +387,20 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
    */
   let arrowReach = 0
 
-  function setArrows(list: { from: string; to: string; color: 'yellow' | 'blue'; label?: string; extend?: number }[]): void {    // 每次重建最省事：箭头数量很少（顶多几个），而增量更新要维护一堆映射关系，
+  function setArrows(
+    list: { from: string | Vec3; to: string | Vec3; color: 'yellow' | 'blue'; label?: string; extend?: number }[],
+  ): void {
+    // 每次重建最省事：箭头数量很少（顶多几个），而增量更新要维护一堆映射关系，
     // 那是给几百个对象准备的复杂度，这里用不上。
     for (const a of [...arrowGroup.children]) arrowGroup.remove(a)
     for (const l of arrowLabels) l.removeFromParent()
     arrowLabels = []
     arrowReach = 0
+    // 点名的从当前坐标取，直接给坐标的就用坐标（面法向量的尖端就是这种）
+    const resolve = (x: string | Vec3): Vec3 | undefined => (typeof x === 'string' ? positions[x] : x)
     for (const item of list) {
-      const a = positions[item.from]
-      const b = positions[item.to]
+      const a = resolve(item.from)
+      const b = resolve(item.to)
       if (!a || !b) continue
       const dir = new THREE.Vector3(b[0] - a[0], b[1] - a[1], b[2] - a[2])
       // extend：把箭头**伸出去一截**。坐标轴必须这么做 ——

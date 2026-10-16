@@ -5,6 +5,7 @@ import {
   lineLineAngle,
   linePlaneAngle,
   planeNormal,
+  polygonNormal,
   projectOnLine,
   projectOnPlane,
 } from './angle.ts'
@@ -90,6 +91,62 @@ console.log('\n【画线面角要用到的投影】')
   const onLine = projectOnLine(C, A, B)
   ok('C 在直线 AB 上的射影是 B', onLine !== null && Math.hypot(onLine[0] - B[0], onLine[1] - B[1], onLine[2] - B[2]) < 1e-9)
   ok('共线三点的平面法向为 null', planeNormal(A, B, [4, 0, 0]) === null)
+}
+
+console.log('\n【多边形面的法向量（Newell）：四边形、歪的、退化的都要对】')
+{
+  // 为什么不用 planeNormal：它只吃三个点。面有四个以上顶点时，
+  // 「挑前三个做叉积」会踩到「前三点接近共线」的坑 —— 那时方向会乱飞，
+  // 而图上看起来只是「法向量指歪了」，很难怀疑到算法头上。
+  // 下面第二个用例就是专门把「前三点接近共线」造出来验的。
+
+  // 1) 正方形在 xz 平面上，法向应该是 ±y
+  const square: Vec3[] = [
+    [0, 0, 0],
+    [2, 0, 0],
+    [2, 0, 2],
+    [0, 0, 2],
+  ]
+  const n1 = polygonNormal(square)
+  ok('正方形（xz 平面）的法向沿 y 轴', !!n1 && Math.abs(Math.abs(n1[1]) - 1) < 1e-9, n1 ? n1.map((x) => x.toFixed(3)).join(',') : 'null')
+
+  // 2) **前三点严格共线**的四边形。
+  //    这才是换 Newell 的真正理由：planeNormal 只吃前三个点，
+  //    前三点一共线它就返回 null —— 可这个面明明是有法向的，
+  //    结果就是「法向量该画却画不出来」，而且报不出任何错。
+  //    （我一开始造的是「接近共线」，那并没有让 planeNormal 出错 ——
+  //     它照样给出正确的 ±y。测试当场把我的断言打了回来，才换成严格共线。
+  //     教训：说某个算法在这里会出错之前，先把例子真的跑一遍。）
+  const frontThreeCollinear: Vec3[] = [
+    [0, 0, 0],
+    [1, 0, 0],
+    [2, 0, 0], // ← 与第 1、2 点严格共线
+    [1, 0, -2],
+  ]
+  const n2 = polygonNormal(frontThreeCollinear)
+  const viaThree = planeNormal(frontThreeCollinear[0], frontThreeCollinear[1], frontThreeCollinear[2])
+  ok(
+    '前三点严格共线的四边形，Newell 仍给出沿 y 的法向',
+    !!n2 && Math.abs(Math.abs(n2[1]) - 1) < 1e-9,
+    n2 ? n2.map((x) => x.toFixed(3)).join(',') : 'null',
+  )
+  ok(
+    '同一组点用 planeNormal（只吃前三点）会返回 null —— 法向量就画不出来了',
+    viaThree === null,
+    viaThree ? viaThree.map((x) => x.toFixed(3)).join(',') : 'null',
+  )
+
+  // 3) 法向是单位向量
+  ok('法向是单位向量', !!n1 && Math.abs(Math.hypot(n1[0], n1[1], n1[2]) - 1) < 1e-12)
+
+  // 4) 顶点顺序反过来，方向应该正好相反（这是 Newell 的固有性质，写下来免得以后被当成 bug）
+  const n3 = polygonNormal([...square].reverse())
+  ok('顶点顺序反过来，法向反向', !!n1 && !!n3 && n1[0] * n3[0] + n1[1] * n3[1] + n1[2] * n3[2] < -0.999)
+
+  // 5) 退化：点太少、共线、重复
+  ok('少于三个点返回 null', polygonNormal([[0, 0, 0], [1, 0, 0]]) === null)
+  ok('全部共线返回 null', polygonNormal([[0, 0, 0], [1, 0, 0], [2, 0, 0], [3, 0, 0]]) === null)
+  ok('所有点重合返回 null', polygonNormal([[1, 1, 1], [1, 1, 1], [1, 1, 1]]) === null)
 }
 
 console.log(`\n${failed === 0 ? '✓ 全部通过' : `✗ ${failed} 项未通过`}`)
