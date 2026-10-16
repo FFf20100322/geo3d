@@ -201,6 +201,12 @@ function refreshAnnotations(): void {
   currentAnnotations = []
   const doubts: string[] = []
 
+  // **箭头要放在最前面算**，不能等到函数末尾 ——
+  // 这个函数在没有图形、或标注关掉的时候会提前返回，
+  // 挂在末尾的话「向量法/基底法/坐标系法」的箭头就永远画不出来（真机上踩过：
+  // 选着向量法却一根箭头都没有，因为这个函数在标注关着时提前返回了）。
+  scene?.setArrows(methodArrows())
+
   if (base && pts) {
     const radius = suggestRadius(Object.values(pts))
     const at = (n: string) => pts[n]
@@ -266,9 +272,8 @@ function refreshAnnotations(): void {
     })
   }
 
-  // 三种解题法的箭头与坐标标签也在这里一起算
-  scene?.setArrows(methodArrows())
-  currentAnnotations.push(...coordAnnotations())
+  // 坐标标签也在最后补上（它只跟标注档位有关，放在这里没问题）
+  currentAnnotations.push(...coordAnnotations(), ...basisAnnotations())
   scene?.setAnnotations(shownAnnotations())
   annotDoubts = doubts
   updateAnnotButton()
@@ -722,6 +727,11 @@ function applyMoving(fromPanel = false): void {
   if (Object.keys(changed).length) scene?.setPositions(changed)
   // 角度会随动点变化，所以标注要跟着重算（scene3d 内部就地复用对象，不会每帧新建）
   if (annotMode > 0) refreshAnnotations()
+  // **箭头也要跟着动点走**：向量法的向量、基底法的基底、坐标系法的坐标轴，
+  // 只要端点里有一个是动点，拖动时就该实时跟着变 ——
+  // 而 refreshAnnotations 在「标注关掉」时会提前返回，所以这里单独调一次，
+  // 不能指望它顺带把箭头也更新了（真机上踩过：拖了半天向量一动不动）。
+  scene?.setArrows(methodArrows())
   // 手指拖动时面板要跟着刷新；从面板自己改的就不用刷（正在输入的框会被跳过）
   if (!fromPanel) syncPanelValues()
 }
@@ -1848,9 +1858,13 @@ function renderQSel(): void {
     ])
   }
   if (vias.length) {
-    group('via', `解法：${viaPick || '不分方法'}`, [
-      { text: '不分方法', on: !viaPick, pick: () => { viaPick = '' } },
-      ...vias.map((v) => ({ text: v, on: viaPick === v, pick: () => { viaPick = v } })),
+    // **不给「不分方法」这个选项。**
+    // 用户的要求：真实题目里系统自己挑最简洁的那一种，用户想换再手动选 ——
+    // 「不分方法」这个中间态没有意义，留着只会让人以为那也是一种解法。
+    // 还没手动选时，标签显示当前解答实际用的那一种。
+    const current = viaPick || vias[0]
+    group('via', `解法：${current}`, [
+      ...vias.map((v) => ({ text: v, on: current === v, pick: () => { viaPick = v } })),
     ])
   }
 
@@ -1900,7 +1914,7 @@ function methodArrows(): { from: string; to: string; color: 'yellow' | 'blue'; l
     // 不标的话看图的人根本分不出哪条是哪条。
     // **延长到 1.7 倍**：三个轴上取的点本来就在图形自己的顶点上（A、B、D、A₁），
     // 不延长的话箭头正好停在那些点上、和原点标注糊成一片，也看不出轴伸到哪里。
-    const EXT = 1.7
+    const EXT = 1.25
     return [
       { from: f.origin, to: f.x, color: 'blue' as const, label: 'x', extend: EXT },
       { from: f.origin, to: f.y, color: 'blue' as const, label: 'y', extend: EXT },
@@ -1914,6 +1928,82 @@ function methodArrows(): { from: string; to: string; color: 'yellow' | 'blue'; l
   if (viaPick === '基底法')
     return all.filter((a) => a.color === 'blue').map((a) => ({ from: a.from, to: a.to, color: 'blue' as const, label: a.label }))
   return all.map((a) => ({ from: a.from, to: a.to, color: pick(a), label: a.label }))
+}
+
+/**
+ * 把一个向量用三个基底向量表示出来：p − o = u·e1 + v·e2 + w·e3，解出 (u, v, w)。
+ * 三个基底不共面时才有唯一解；共面就返回 null（那时候表示不出来）。
+ *
+ * 坐标标签与基底法的倍数都用它 —— 同一件事只写一遍。
+ */
+function coefInBasis(o: Vec3, e1: Vec3, e2: Vec3, e3: Vec3, p: Vec3): Vec3 | null {
+  const sub = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+  const det3 = (a: Vec3, b: Vec3, c: Vec3) =>
+    a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0]) + a[2] * (b[0] * c[1] - b[1] * c[0])
+  const D = det3(e1, e2, e3)
+  if (Math.abs(D) < 1e-9) return null
+  const d = sub(p, o)
+  return [det3(d, e2, e3) / D, det3(e1, d, e3) / D, det3(e1, e2, d) / D]
+}
+
+/** 把一个数写得干净些：整数不带小数点，小数最多两位 */
+function fmtNum(x: number): string {
+  const r = Math.round(x * 100) / 100
+  return Number.isInteger(r) ? String(r) : String(r)
+}
+
+/**
+ * 基底法：把**目标向量**写成「多少倍的基底向量」。
+ *
+ * 用户的要求：基底法用「目标向量 = 若干倍的基底之和」表示出来；
+ * 如果是重点（也就是标注开着），倍数要**随动点实时更新**。
+ * 实时这部分不用额外做 —— 这个函数跟着拖动路径一起被调用，每次都用最新坐标重算。
+ */
+function basisAnnotations(): { shape: AnnotationShape; kind: string; tier: 1 | 2 }[] {
+  const sol = currentSolution
+  if (viaPick !== '基底法' || !sol?.arrows || !currentSolvedAll) return []
+  const basis = sol.arrows.filter((a) => a.color === 'blue')
+  const targets = sol.arrows.filter((a) => (a.color ?? 'yellow') === 'yellow')
+  if (basis.length !== 3 || !targets.length) return []
+  const P = currentSolvedAll
+  const o = P[basis[0].from]
+  const e1 = P[basis[0].to]
+  const e2 = P[basis[1].to]
+  const e3 = P[basis[2].to]
+  if (!o || !e1 || !e2 || !e3) return []
+  const v1 = sub3(e1, o)
+  const v2 = sub3(e2, o)
+  const v3 = sub3(e3, o)
+
+  const out: { shape: AnnotationShape; kind: string; tier: 1 | 2 }[] = []
+  for (const t of targets) {
+    const a = P[t.from]
+    const b = P[t.to]
+    if (!a || !b) continue
+    const c = coefInBasis(o, v1, v2, v3, b)
+    if (!c) continue
+    // 把起点也一起搬进来：目标向量 = c1·基1 + c2·基2 + c3·基3
+    const base0 = coefInBasis(o, v1, v2, v3, a)
+    const d = base0 ? [c[0] - base0[0], c[1] - base0[1], c[2] - base0[2]] : c
+    const name = t.label ?? `${t.from}${t.to}`
+    const parts = d.map((k, i) => `${fmtNum(k)}·${basis[i].label ?? '基' + (i + 1)}`).join(' + ')
+    out.push({
+      shape: {
+        arc: [],
+        extras: [],
+        // 标签摆在目标向量的中点，一眼能看出它说的是哪条
+        labelAt: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2],
+        text: `${name} = ${parts}`,
+      },
+      kind: 'basis',
+      tier: 1,
+    })
+  }
+  return out
+}
+
+function sub3(a: Vec3, b: Vec3): Vec3 {
+  return [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
 }
 
 /**

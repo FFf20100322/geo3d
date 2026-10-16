@@ -328,13 +328,21 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
 
   /** 箭头尖端的字（坐标轴的 x/y/z），跟着模型一起转，所以挂在 group 下 */
   let arrowLabels: CSS2DObject[] = []
+  /**
+   * 箭头尖端离图形中心最远有多远。
+   *
+   * 坐标轴会伸出图形之外（用户要求「比图形长一点」），取景如果只按图形本身算，
+   * **轴尖就会被切在屏幕外** —— 真机上见过 z 轴的那个字跑到屏幕上方看不见了。
+   * 所以取景要把这个也算进去。标注显隐仍然只看图形本身的大小（那是另一回事）。
+   */
+  let arrowReach = 0
 
-  function setArrows(list: { from: string; to: string; color: 'yellow' | 'blue'; label?: string; extend?: number }[]): void {
-    // 每次重建最省事：箭头数量很少（顶多几个），而增量更新要维护一堆映射关系，
+  function setArrows(list: { from: string; to: string; color: 'yellow' | 'blue'; label?: string; extend?: number }[]): void {    // 每次重建最省事：箭头数量很少（顶多几个），而增量更新要维护一堆映射关系，
     // 那是给几百个对象准备的复杂度，这里用不上。
     for (const a of [...arrowGroup.children]) arrowGroup.remove(a)
     for (const l of arrowLabels) l.removeFromParent()
     arrowLabels = []
+    arrowReach = 0
     for (const item of list) {
       const a = positions[item.from]
       const b = positions[item.to]
@@ -360,6 +368,14 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
       // 画在图形旁边一点，免得和棱完全重叠、看不出那里有箭头
       arrow.renderOrder = 2
       arrowGroup.add(arrow)
+      // 记下箭头伸到多远，取景要用
+      if (lastFit) {
+        const c = lastFit.center
+        const tipX = a[0] + dir.clone().normalize().x * len
+        const tipY = a[1] + dir.clone().normalize().y * len
+        const tipZ = a[2] + dir.clone().normalize().z * len
+        arrowReach = Math.max(arrowReach, Math.hypot(tipX - c.x, tipY - c.y, tipZ - c.z))
+      }
       // 尖端那个字（坐标轴的 x / y / z）。没有它根本分不出哪条轴是哪条。
       if (item.label) {
         const el = document.createElement('div')
@@ -373,6 +389,8 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
         arrowLabels.push(obj)
       }
     }
+    // 箭头变了就可能伸得更远，取景跟着重算一次（用户自己转过视角就不动他的）
+    if (!userAdjusted) applyFit()
   }
 
   function setHighlight(hl: Highlight | null) {
@@ -561,8 +579,11 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
     if (!lastFit) return
     const vFov = (camera.fov * Math.PI) / 180
     const hFov = 2 * Math.atan(Math.tan(vFov / 2) * Math.max(camera.aspect, 0.01))
-    const dv = lastFit.radius / Math.sin(vFov / 2)
-    const dh = lastFit.radius / Math.sin(Math.min(hFov / 2, Math.PI / 2 - 1e-3))
+    // 箭头（坐标轴）可能伸到图形外面，取景要按「图形与箭头的较大者」来 ——
+    // 只按图形算的话，轴尖会被切在屏幕外（真机上 z 轴的字就跑到了屏幕上面）。
+    const need = Math.max(lastFit.radius, arrowReach)
+    const dv = need / Math.sin(vFov / 2)
+    const dh = need / Math.sin(Math.min(hFov / 2, Math.PI / 2 - 1e-3))
     const dist = Math.max(dv, dh) * 1.1 // 留一成余量，免得贴着边
     controls.target.copy(lastFit.center)
     camera.position.copy(lastFit.center).addScaledVector(lastFit.dir, dist)
