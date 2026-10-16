@@ -74,11 +74,17 @@
 
       #player { position: fixed; left: 12px; right: 12px; bottom: 76px; z-index: 16; display: none; }
       #player .pl-row { display: flex; gap: 6px; align-items: center; padding: 6px; border-radius: 10px; background: rgba(20,26,34,.9); border: 1px solid #2b3442; }
-      /* 收起状态：只留下「展开」那一个按钮，其余全藏起来 —— 图形能多看一截。
-         收起按钮自己不藏，否则就没有东西能点开它了。 */
-      #player.folded .pl-row > :not(#pl-fold) { display: none; }
-      #player.folded #pl-range, #player.folded #pl-text { display: none; }
-      #player.folded .pl-row { width: fit-content; margin-left: auto; }
+      /* 收起状态：按钮与滑杆收掉，只留「步骤说明 + 展开」那一行。
+         收起按钮自己不藏（收起后就变成「展开」），否则就没有东西能点开它了。 */
+      #player.folded .pl-row, #player.folded #pl-range { display: none; }
+      .pl-bottom { display: flex; align-items: flex-start; gap: 8px; margin-top: 6px; }
+      .pl-bottom #pl-text { flex: 1 1 auto; min-width: 0; margin-top: 0; }
+      .pl-bottom #pl-fold { flex: none; }
+      /* 步骤说明压缩过：内边距与行距都收小，最多两行、多出来的省略。
+         它原来是按「一段说明」排的，占掉小半个屏幕 —— 但那只是当前这一步的一句话。 */
+      /* 步骤说明压缩过：内边距与行距收小，最多两行、多出来的省略。
+         它原来按「一段说明」排，占掉小半个屏幕 —— 但那只是当前这一步的一句话。 */
+      #pl-text { margin: 0; padding: 5px 9px; border-radius: 10px; background: rgba(20,26,34,.86); border: 1px solid #2b3442; font-size: 12.5px; color: #cbd5e1; cursor: pointer; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
       button.small { padding: 6px 9px; font-size: 13px; border-radius: 8px; }
       #pl-label { flex: 1; text-align: center; font-size: 12px; color: #98a2b3; font-variant-numeric: tabular-nums; }
       #pl-range { width: 100%; margin: 8px 0 0; accent-color: #2f6df6; }
@@ -145,7 +151,6 @@
       #dyn-panel.focusing .dyn-row.dyn-focus .dyn-top { display: none; }
       #dyn-panel.focusing #dyn-collapse { display: none; }
       #dyn-panel.focusing input[type="range"] { margin: 4px 0 0; height: 28px; }
-      #pl-text { margin-top: 6px; padding: 7px 11px; border-radius: 10px; background: rgba(20,26,34,.86); border: 1px solid #2b3442; font-size: 13px; color: #cbd5e1; cursor: pointer; line-height: 1.5; }
 
       #history-list { margin-top: 12px; display: flex; flex-direction: column; gap: 10px; }
       #history-list:empty + .gap { display: none; }
@@ -313,10 +318,15 @@
         <button id="pl-play" class="ghost small">▶ 播放</button>
         <button id="pl-next" class="ghost small">下一步 ▶</button>
         <span id="pl-label">全部</span>
-        <button id="pl-fold" class="ghost small" title="把这一行收起来，多看一点图形">▼ 收起</button>
       </div>
       <input id="pl-range" type="range" min="-1" max="0" step="1" value="-1" />
-      <div id="pl-text"></div>
+      <!-- 步骤说明与收起按钮同一行：收起之后这一行整个留下来，
+           按钮变成「展开」，说明文字还在旁边 —— 收起只是把按钮与滑杆收掉，
+           不是把解题过程也一起收掉。 -->
+      <div class="pl-bottom">
+        <div id="pl-text"></div>
+        <button id="pl-fold" class="ghost small" title="把按钮和滑杆收起来，多看一点图形">▼ 收起</button>
+      </div>
     </div>
     <div id="scene-caption"></div>
     <div id="hint">单指拖动旋转 · 双指缩放平移</div>

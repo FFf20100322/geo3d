@@ -19,6 +19,14 @@ export interface Reveal {
   /** 到这一步为止已经画出来的点与棱。题面原有的元素不受它影响，永远显示。 */
   points: Set<string>
   edges: Set<string>
+  /**
+   * 这一步**正在长出来**的那几条棱，以及长到了几成（0..1）。
+   *
+   * 为什么要有它：滑杆如果只有「四个节点」，就只能看四条辅助线一条条蹦出来，
+   * 中间什么都没有 —— 而辅助线是怎么画出来的，恰恰是解题过程里最该看清的部分。
+   * 有了这个，滑杆可以分成很细的格子，一条线从无到有慢慢拉出来。
+   */
+  grow?: { edges: Set<string>; t: number }
 }
 
 /** 当前步骤用到的元素，画成醒目色 */
@@ -127,6 +135,8 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
   const matHl = new THREE.LineBasicMaterial({ color: 0xffd166 })
 
   let edgeObjects = new Map<string, THREE.LineSegments>()
+  /** 每条棱两端的世界坐标，滑杆按进度把辅助线拉出来时要用（别和下面那个同名的搞混） */
+  let edgeCoords = new Map<string, [Vec3, Vec3]>()
   let vertexObjects = new Map<string, CSS2DObject>()
   /** 点名对应的那个 DOM，用来处理标注互相遮挡 */
   const labelEls = new Map<string, HTMLElement>()
@@ -173,6 +183,7 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
     faceObjects.clear()
     hiddenFaces.clear() // 换图就是全显示，别把上一张图关掉的面带到这一张
     edgeEnds.clear()
+    edgeCoords.clear() // 换了图形，上一张图的棱端点坐标就没用了，留着会张冠李戴
     auxEdges = new Set(r.edges.filter((e) => e.aux).map((e) => e.key))
     auxPoints = new Set(r.vertices.filter((v) => v.aux).map((v) => v.name))
     positions = {}
@@ -205,6 +216,8 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
       if (e.aux) line.computeLineDistances()
       group.add(line)
       edgeObjects.set(e.key, line)
+      // 两端坐标留着：滑杆把一条辅助线拉出来时，要按进度把端点从起点往终点挪
+      edgeCoords.set(e.key, [e.a, e.b])
     }
 
     // 点标注走 DOM 覆盖层，永远压在最上面 —— 「点标注必须常驻」靠这层保证
@@ -243,6 +256,7 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
     }
     const dirty = new Set(moved)
     for (const [key, line] of edgeObjects) {
+      // 这里要的是**两端的点名**（下面按名字去查新坐标），不是坐标本身
       const ends = edgeEnds.get(key)
       if (!ends || (!dirty.has(ends[0]) && !dirty.has(ends[1]))) continue
       const a = positions[ends[0]]
@@ -269,9 +283,32 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
   }
 
   function setReveal(reveal: Reveal | null) {
+    const grow = reveal?.grow
     for (const [key, line] of edgeObjects) {
       if (!auxEdges.has(key)) continue // 题面原有的棱永远显示
+      if (grow?.edges.has(key)) {
+        // 正在长出来：把第二个端点从起点往终点挪，挪到几成就画到几成。
+        // 直接改顶点缓冲（而不是用缩放）—— 线段的粗细不该跟着变。
+        line.visible = true
+        const ends = edgeCoords.get(key)
+        if (ends) {
+          const attr = line.geometry.getAttribute('position') as THREE.BufferAttribute
+          const [a, b] = ends
+          const t = Math.max(0, Math.min(1, grow.t))
+          attr.setXYZ(1, a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t)
+          attr.needsUpdate = true
+          line.geometry.computeBoundingSphere()
+        }
+        continue
+      }
       line.visible = reveal === null || reveal.edges.has(key)
+      // 长完的那些要恢复成完整的一条，否则上一帧的「半截」会留着
+      const ends = edgeCoords.get(key)
+      if (ends && line.visible) {
+        const attr = line.geometry.getAttribute('position') as THREE.BufferAttribute
+        attr.setXYZ(1, ends[1][0], ends[1][1], ends[1][2])
+        attr.needsUpdate = true
+      }
     }
     for (const [name, obj] of vertexObjects) {
       if (!auxPoints.has(name)) continue

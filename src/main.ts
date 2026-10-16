@@ -1171,10 +1171,15 @@ function loadBuiltinDemo(): void {
     currentSolution = sol
     currentSolvedAll = { ...reSolved.points }
     stepIndex = -1
+    stepProgress = -1
     rememberFigure(merged)
         scene?.setScene(toRenderable(merged, reSolved.points, parsed))
     pickDefaultMode()
     refreshAnnotations()
+    // 必须在这里把揭示状态重置一次。
+    // 漏了这一步的后果真机上见过：刚载入时「全部」档下少了两条辅助线（PE、FN），
+    // 因为 setReveal 只有 applyStep 会调，而这里原来没调 —— 图形的可见性就停在上一次留下的状态上。
+    applyStep()
     renderSolution(sol)
     $<HTMLButtonElement>('btn-generate').textContent = '重新解题'
     say('已载入内置示例。', 'ok')
@@ -1314,6 +1319,7 @@ function openRecord(r: HistoryRecord) {
         refreshAnnotations()
         syncSceneChrome()
         stepIndex = -1
+        stepProgress = -1
         stopPlay()
         $<HTMLButtonElement>('btn-generate').textContent = '重新解题'
         if (r.solution) {
@@ -1610,6 +1616,7 @@ async function generateSolution(btn: HTMLButtonElement): Promise<void> {
         currentSolution = sol
         solutionFromText = textKey() // 记住这份解答是按哪版题面推的
         stepIndex = -1 // 换了新题就回到「全部显示」，免得接着上一条的进度
+        stepProgress = -1
         stopPlay()
         rememberFigure(merged)
             scene?.setScene(toRenderable(merged, solved.points, base))
@@ -1677,6 +1684,27 @@ function highlightSets(): Highlight | null {
   return { points, edges, faces }
 }
 
+/**
+ * 滑杆的一格 = 解题一步的 1/24。
+ *
+ * 为什么要切这么细：滑杆原来只有「几步」那么多格，拖动时辅助线是**一条条蹦出来**的，
+ * 中间什么都没有 —— 可「这条辅助线是怎么画出来的」恰恰是解题过程里最该看清的部分。
+ * 切成细格之后，一条线可以从头慢慢拉到尾。
+ */
+const SLIDER_SUB = 24
+
+/**
+ * 播放时每一格占多少毫秒。一格 = 一步的 1/24，所以一步约 1.4 秒。
+ * 太快看不清线是怎么长的，太慢一个四步的解答要放十秒。
+ */
+const MS_PER_SLIDER_TICK = 60
+
+/**
+ * 滑杆的位置。**-1 表示全部**；否则它的整数部分是哪一步、小数部分是这一步画到了几成。
+ * 用一个数而不是「步骤序号 + 进度」两个数，是因为滑杆本身就是一个连续的量。
+ */
+let stepProgress = -1
+
 function applyStep(): void {
   const base = currentScene
   const sol = currentSolution
@@ -1684,39 +1712,73 @@ function applyStep(): void {
   const label = $('pl-label')
   const text = $('pl-text')
   const range = $<HTMLInputElement>('pl-range')
-  range.max = String(sol.steps.length - 1)
-  range.value = String(stepIndex)
+  const total = sol.steps.length
+  range.max = String(total * SLIDER_SUB)
+  range.value = String(stepProgress)
 
-  if (stepIndex < 0) {
+  if (stepProgress < 0 || total === 0) {
+    stepIndex = -1
     scene.setReveal(null)
     scene.setHighlight(highlightSets())
     label.textContent = '全部'
-    text.textContent = '已显示全部辅助线。拖上面的滑杆或点「播放」，可以按解题步骤逐条看它们是怎么画出来的。'
+    text.textContent = '已显示全部辅助线。拖上面的滑杆或点「播放」，可以按解题步骤一条条看它们是怎么画出来的。'
     return
   }
+
+  const step = Math.min(total - 1, Math.floor(stepProgress / SLIDER_SUB))
+  const frac = (stepProgress % SLIDER_SUB) / SLIDER_SUB
+  stepIndex = step
+
   const tl = stepTimeline(base, sol)
-  const at = tl.afterStep[stepIndex]
-  scene.setReveal({ points: at.points, edges: at.edges })
-  const step = sol.steps[stepIndex]
+  const at = tl.afterStep[step]
+  const step0 = sol.steps[step]
+
+  // 这一步**新多出来**的棱。它们分两种：
+  // - **这一步真正用到的**（`step.uses.edges`）—— 这些是「关键辅助线」，一条条慢慢画出来，
+  //   因为「这条线是怎么想到要画的」正是解题过程里最该看清的部分；
+  // - 其余的（比如某个点被带出来了，顺带连着它的一堆棱）—— **直接出现**，不做动画。
+  //   全做动画的话，每一格都在长线，看着像一团东西在爬，反而看不见重点。
+  const before = step > 0 ? tl.afterStep[step - 1] : null
+  const fresh = new Set([...at.edges].filter((k) => !before?.edges.has(k)))
+  const keyEdges = new Set<string>()
+  for (const [a, b] of step0.uses.edges) {
+    const k = edgeKey(a, b)
+    if (fresh.has(k)) keyEdges.add(k)
+  }
+  scene.setReveal({
+    points: at.points,
+    edges: at.edges,
+    grow: keyEdges.size ? { edges: keyEdges, t: frac } : undefined,
+  })
   scene.setHighlight(highlightSets())
-  label.textContent = `${stepIndex + 1} / ${sol.steps.length}`
-  text.textContent = `${stepIndex + 1}. ${step.title}`
+  label.textContent = `${step + 1} / ${total}`
+  // 只有**真的画到一半**才报百分比。点「下一步」会让这一步画到 23/24 格，
+  // 那时候报「画到 96%」很怪 —— 那一步其实已经画完了。
+  const pct = Math.round(frac * 100)
+  const midway = frac >= 0.05 && frac <= 0.95
+  text.textContent = `${step + 1}. ${step0.title}${midway ? `　（画到 ${pct}%）` : ''}`
 }
 
-function setStep(i: number): void {
+function setStep(s: number): void {
   const sol = currentSolution
   if (!sol) return
-  stepIndex = i < 0 ? -1 : Math.min(i, sol.steps.length - 1)
+  // 点「上一步/下一步」时让这一步**画完**。
+  // 如果停在这一步的起点（frac = 0），那就只换了文字、线一根没出现 —— 看着像没反应。
+  stepProgress = s < 0 ? -1 : Math.min(sol.steps.length * SLIDER_SUB - 1, s * SLIDER_SUB + SLIDER_SUB - 1)
   applyStep()
-  // 切步骤时底部那两块文字会变高变矮（步骤说明有长有短），
-  // 所以要让位重算一次，题面那块才会跟着挪开、不叠在一起。
+  // 切步骤时底部那两块文字会变高变矮，所以要让位重算一次
   syncViewInset()
 }
 
 function stopPlay(): void {
   playing = false
-  if (playTimer !== undefined) window.clearTimeout(playTimer)
-  playTimer = undefined
+  if (playTimer !== undefined) {
+    // 两个都调：播放走的是 requestAnimationFrame，而别处可能还留着 setTimeout。
+    // 它们的 id 在有些浏览器里不是同一个池子，只清一种会留下一个还在跑的循环。
+    window.clearTimeout(playTimer)
+    window.cancelAnimationFrame(playTimer)
+    playTimer = undefined
+  }
   $('pl-play').textContent = '▶ 播放'
 }
 
@@ -1748,25 +1810,37 @@ $('pl-play').onclick = () => {
   }
   playing = true
   $('pl-play').textContent = '⏸ 暂停'
-  setStep(0)
+  const totalTicks = sol.steps.length * SLIDER_SUB
+  if (stepProgress < 0 || stepProgress >= totalTicks) stepProgress = 0
+  // **像视频那样连续播放**：按真实流逝的时间推进，中途不停顿。
+  // 一开始我在每个步骤边界停了 800 毫秒给人读文字，用户看了说要像视频 ——
+  // 那就不要停顿：文字本来就会一直显示在下面，不需要停下来才看得见。
+  const startedAt = performance.now()
+  const from = stepProgress
   const tick = () => {
-    playTimer = undefined
     if (!playing || !currentSolution) return
-    if (stepIndex >= currentSolution.steps.length - 1) {
+    const elapsed = performance.now() - startedAt
+    const next = from + Math.floor(elapsed / MS_PER_SLIDER_TICK)
+    if (next >= totalTicks) {
+      stepProgress = totalTicks
+      applyStep()
       stopPlay()
       return
     }
-    setStep(stepIndex + 1)
-    playTimer = window.setTimeout(tick, 2600)
+    stepProgress = next
+    applyStep()
+    playTimer = window.requestAnimationFrame(tick)
   }
-  playTimer = window.setTimeout(tick, 2600)
+  playTimer = window.requestAnimationFrame(tick)
 }
 $('pl-text').onclick = () => show('solution')
 
-// 滑杆可以直接拖到任意一步
+// 滑杆可以拖到任意位置 —— 它现在是连续的，拖到哪就画到哪
 $('pl-range').addEventListener('input', () => {
   stopPlay()
-  setStep(Number($<HTMLInputElement>('pl-range').value))
+  stepProgress = Number($<HTMLInputElement>('pl-range').value)
+  applyStep()
+  syncViewInset()
 })
 
 updateCaption(false)
