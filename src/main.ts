@@ -1879,20 +1879,6 @@ function renderQSel(): void {
   // 留着只会和选项挤在一起。
   const tools = $('scene-tools')
   tools.style.visibility = openGroup ? 'hidden' : 'visible'
-
-  // 坐标系法的「为什么这么建系」。用户要求能看懂系统的选择 ——
-  // 只说「以 A 为原点」不够，要说清为什么这样最简。
-  const note = $('framenote')
-  const frameNote = viaPick === '坐标系法' ? currentSolution?.frame?.note : undefined
-  if (frameNote) {
-    note.textContent = `为什么这么建系：${frameNote}`
-    note.style.display = 'block'
-    // 贴在「解法」标签下面；标签位置由 syncViewInset 算，这里跟着走
-    const qs = box.getBoundingClientRect()
-    note.style.top = `${Math.round(qs.bottom + 6)}px`
-  } else {
-    note.style.display = 'none'
-  }
 }
 
 /** 换了一问或一种解法：步骤从头播一遍，标注也跟着重算 */
