@@ -752,13 +752,19 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
    */
   function syncAnnotVisibility(): void {
     if (!lastFit) return
-    const c = lastFit.center
-    const p0 = new THREE.Vector3(c.x, c.y, c.z).project(camera)
-    // 沿相机的「上」方向挪一个半径，量两点在屏幕上的像素距离
-    const up = camera.up.clone().normalize().multiplyScalar(lastFit.radius)
-    const p1 = new THREE.Vector3(c.x + up.x, c.y + up.y, c.z + up.z).project(camera)
-    const r = renderer.domElement.getBoundingClientRect()
-    const pixels = Math.hypot((p1.x - p0.x) * r.width, (p1.y - p0.y) * r.height) / 2
+    // 用「距离 + 视野角」直接算图形在屏幕上的像素半径。
+    //
+    // 这里踩过一个坑：最初是把「中心点 + 半径 × 相机的上方向」投影到屏幕上量两点距离。
+    // 那个算法的结果**会随观察角度变** —— 相机转到从正上方往下看时，
+    // 「上方向」几乎与视线平行，投到屏幕上几乎没有长度，于是被误判成「缩得太小」，
+    // 转个角度标注就整片消失。
+    // 用户要的是「只有缩小时才不显示」，所以必须用与朝向无关的量：
+    // 像素半径 = 世界半径 / 距离 × (画布高 / (2·tan(半视野角)))，再除以 2。
+    const h = renderer.domElement.getBoundingClientRect().height
+    if (h <= 0) return
+    const dist = camera.position.distanceTo(lastFit.center)
+    const vFov = (camera.fov * Math.PI) / 180
+    const pixels = (lastFit.radius / Math.max(dist, 1e-6)) * (h / (2 * Math.tan(vFov / 2))) / 2
     annotGroup.visible = pixels >= ANNOT_MIN_PIXELS
   }
 
