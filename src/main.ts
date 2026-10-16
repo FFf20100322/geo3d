@@ -32,6 +32,8 @@ import {
   type AngleSpec,
   type AnnotationShape,
 } from './annotation'
+// 导出图片/视频时的坐标换算与格式选择（纯函数，能在电脑上单独验）
+import { exportSize, pickVideoMime, toCanvasLabels } from './export'
 // .g3d 打包：把一道题连同原图、题面、解答、3D 一起存成一个文件，可以发给别人
 import { buildG3d, parseG3d, suggestFileName } from './g3d'
 import { createHistory, type HistoryRecord } from './history'
@@ -1436,6 +1438,179 @@ function renderHistory() {
 }
 
 /**
+ * 把 3D 画面与**标注**合成到一张 2D 画布上。
+ *
+ * 为什么不直接 `canvas.toDataURL()`：3D 画面在 WebGL 画布上，
+ * 而点标注、角度、坐标那些字都是**贴在画布上面的 DOM** ——
+ * 直接截画布，导出的图里一个字都没有，拿给别人看基本没用。
+ *
+ * 所以这里自己把画布画一遍、再把标注按同样的位置画上去。
+ * 位置换算在 `export.ts` 里（纯函数，已经单独验过），这里只负责画。
+ */
+function compositeFrame(): HTMLCanvasElement | null {
+  const src = $('app').querySelector('canvas')
+  const labels = $('labels')
+  if (!(src instanceof HTMLCanvasElement)) return null
+
+  const cbox = src.getBoundingClientRect()
+  const want = exportSize(src.width, src.height)
+  const out = document.createElement('canvas')
+  out.width = want.w
+  out.height = want.h
+  const ctx = out.getContext('2d')
+  if (!ctx) return null
+  // 导出的底色用页面那种深色，不然透明底在聊天软件里会变成白底黑字看不清
+  ctx.fillStyle = '#0f1319'
+  ctx.fillRect(0, 0, out.width, out.height)
+  ctx.drawImage(src, 0, 0, out.width, out.height)
+
+  const spots = [...labels.querySelectorAll('div')].map((el) => {
+    const r = el.getBoundingClientRect()
+    const cs = getComputedStyle(el)
+    return {
+      text: el.textContent ?? '',
+      box: { left: r.left, top: r.top, width: r.width, height: r.height },
+      size: parseFloat(cs.fontSize) || 14,
+      color: cs.color || '#fff',
+      bold: (parseInt(cs.fontWeight, 10) || 400) >= 600,
+    }
+  })
+  // 画布内部像素与 CSS 像素的比 —— 高倍屏上不是 1
+  const scale = cbox.width > 0 ? (src.width / cbox.width) * (want.w / src.width) : 1
+  for (const l of toCanvasLabels(spots, cbox, scale)) {
+    ctx.font = `${l.bold ? '700 ' : ''}${l.size}px system-ui, -apple-system, "PingFang SC", sans-serif`
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    // 先描一圈深色边：图上线条密，纯色字会糊在里面看不清
+    ctx.lineWidth = Math.max(2, l.size * 0.22)
+    ctx.strokeStyle = 'rgba(0,0,0,.85)'
+    ctx.strokeText(l.text, l.x, l.y)
+    ctx.fillStyle = l.color
+    ctx.fillText(l.text, l.x, l.y)
+  }
+  return out
+}
+
+/** 存一张当前画面的图片 */
+function exportPng(): void {
+  const out = compositeFrame()
+  if (!out) {
+    say('画布还没准备好，稍等一下再试。', 'err')
+    return
+  }
+  out.toBlob((blob) => {
+    if (!blob) {
+      say('存图失败。', 'err')
+      return
+    }
+    saveBlob(blob, `Geo3D_${stampName()}.png`)
+  }, 'image/png')
+}
+
+/** 文件名里的时间戳，存图/录视频每张都不一样，不会互相覆盖 */
+function stampName(): string {
+  const d = new Date()
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`
+}
+
+/**
+ * 存一个文件到手机/电脑上。
+ * 与 `.g3d` 走同一条路：能用系统的「另存为」就用，用不了就退回下载。
+ */
+async function saveBlob(blob: Blob, name: string): Promise<void> {
+  try {
+    const picker = (window as unknown as { showSaveFilePicker?: (o: unknown) => Promise<FileSystemFileHandle> })
+      .showSaveFilePicker
+    if (picker) {
+      const handle = await picker({ suggestedName: name })
+      const w = await handle.createWritable()
+      await w.write(blob)
+      await w.close()
+      say(`已保存：${name}`, 'ok')
+      return
+    }
+  } catch (e) {
+    if (e instanceof DOMException && e.name === 'AbortError') return
+    // 其它错退回下载
+  }
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = name
+  a.click()
+  setTimeout(() => URL.revokeObjectURL(url), 10000)
+  say(`已导出到「下载」：${name}`, 'ok')
+}
+
+/**
+ * 把**解题动画**录成视频。
+ *
+ * 做法：一边播放解题步骤，一边把合成画面（3D + 标注）按帧喂给 MediaRecorder。
+ * 所以录出来的正是「辅助线一条条画出来」的整个过程 —— 那才是值得发给别人的东西，
+ * 一张静止的图说明不了解题是怎么走的。
+ */
+function exportVideo(): void {
+  const pick = pickVideoMime((m) => typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(m))
+  if (!pick) {
+    say('这个浏览器不支持录制视频，换成「存图」吧。', 'err')
+    return
+  }
+  const first = compositeFrame()
+  if (!first) {
+    say('画布还没准备好，稍等一下再试。', 'err')
+    return
+  }
+  const stream = first.captureStream(30)
+  const rec = new MediaRecorder(stream, { mimeType: pick.mime, videoBitsPerSecond: 4_000_000 })
+  const chunks: Blob[] = []
+  rec.ondataavailable = (e) => {
+    if (e.data.size) chunks.push(e.data)
+  }
+  rec.onstop = () => {
+    stopPlay()
+    const blob = new Blob(chunks, { type: pick.mime })
+    void saveBlob(blob, `Geo3D_${stampName()}.${pick.ext}`)
+  }
+
+  // 每一步留一点时间让人看清，太快的话录出来一闪而过
+  const HOLD_MS = 900
+  // 每帧把最新的画面画进那张正在被录的画布
+  let alive = true
+  const tick = () => {
+    if (!alive) return
+    const f = compositeFrame()
+    const ctx = first.getContext('2d')
+    if (f && ctx) {
+      ctx.clearRect(0, 0, first.width, first.height)
+      ctx.drawImage(f, 0, 0)
+    }
+    requestAnimationFrame(tick)
+  }
+
+  say('开始录制：正在从第一步播到最后一步…')
+  rec.start()
+  alive = true
+  requestAnimationFrame(tick)
+
+  // 播放全部：从头一步步走，每步停 HOLD_MS
+  const total = viewSolution(currentSolution!).steps.length
+  let i = 0
+  const nextStep = () => {
+    if (i >= total) {
+      alive = false
+      // 多等一会儿再停，保证最后一帧录进去
+      window.setTimeout(() => rec.stop(), 400)
+      return
+    }
+    setStep(i)
+    i++
+    window.setTimeout(nextStep, HOLD_MS)
+  }
+  nextStep()
+}
+
+/**
  * 把一道题存成 `.g3d` 文件。
  *
  * **能用系统的「另存为」就用**（`showSaveFilePicker`），用户可以自己挑文件夹 ——
@@ -1561,6 +1736,10 @@ $('btn-clear-history').onclick = () => {
 
 // 导入 .g3d：别人发来的题目文件、或者自己从电脑上存回来的
 $('btn-import-g3d').onclick = () => importG3d()
+
+// 存图 / 录视频：把当前画面与解题动画导出
+$('btn-export-png').onclick = () => exportPng()
+$('btn-export-video').onclick = () => exportVideo()
 
 /**
  * 建图。这是整条链路的总闸门：

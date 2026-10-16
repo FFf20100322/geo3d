@@ -112,7 +112,13 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
 
   let renderer: THREE.WebGLRenderer
   try {
-    renderer = new THREE.WebGLRenderer({ antialias: !tier.low })
+    // preserveDrawingBuffer：导出图片/视频时要能**事后**把画布内容读出来。
+    //
+    // 默认是 false —— 那样浏览器在合成完一帧之后就可以把缓冲区清掉，
+    // 于是「点一下存图」时再去 drawImage，很可能拿到**一张空白图**。
+    // 而且它挑机器：在无头 Chrome 上实测是好的，到别的机器上未必。
+    // 代价是每帧多留一份缓冲，对这个规模的图形可以忽略。
+    renderer = new THREE.WebGLRenderer({ antialias: !tier.low, preserveDrawingBuffer: true })
     if (!renderer.getContext()) throw new Error('no webgl context')
   } catch {
     // 兼容性兜底：低端机 GPU 驱动可能拒绝创建上下文，失败要给人话，不能白屏
