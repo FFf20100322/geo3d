@@ -1737,6 +1737,37 @@ $('btn-clear-history').onclick = () => {
 // 导入 .g3d：别人发来的题目文件、或者自己从电脑上存回来的
 $('btn-import-g3d').onclick = () => importG3d()
 
+/**
+ * 离线相关的三件事：装 service worker、显示离线提示条。
+ *
+ * **为什么要有提示条**：没网时用户最怕的是「是不是坏了」。
+ * 与其让他一个个按钮试过去，不如直接说清哪三件事要等有网、哪些照常能用。
+ *
+ * service worker 只在**安全上下文**里装得上（https、localhost、APK 的自定义协议）。
+ * 用局域网 http 地址访问时装不上 —— 那时页面照常能用，只是离线打不开，
+ * 所以装不上不算错误，静静跳过就行。
+ */
+function setupOffline(): void {
+  const bar = $('offline-bar')
+  const sync = () => {
+    bar.hidden = navigator.onLine
+  }
+  sync()
+  window.addEventListener('online', sync)
+  window.addEventListener('offline', sync)
+
+  if (!('serviceWorker' in navigator)) return
+  // 只在 https 或 localhost 下装；局域网 http 下浏览器会直接拒绝
+  if (!window.isSecureContext) return
+  window.addEventListener('load', () => {
+    void navigator.serviceWorker.register('/sw.js').catch(() => {
+      // 装不上不影响正常使用，不打扰用户
+    })
+  })
+}
+
+setupOffline()
+
 // 存图 / 录视频：把当前画面与解题动画导出
 $('btn-export-png').onclick = () => exportPng()
 $('btn-export-video').onclick = () => exportVideo()

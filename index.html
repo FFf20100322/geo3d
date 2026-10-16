@@ -55,6 +55,10 @@
       /* bottom 要避开 3D 页底下那一行（#footline 在 bottom:8px，高约 16px）——
          两个固定定位的元素原来都压在底部，提示框会把那一行**整个盖住**。
          这是项目铁律「两个控件不能占同一位置」的一个实例。 */
+      /* 没网时的提示条。挂在最上面一行，不挡下面的操作。 */
+      #offline-bar { position: fixed; top: 0; left: 0; right: 0; z-index: 60; padding: 7px 12px; font-size: 12.5px; line-height: 1.45; color: #ffd479; background: rgba(58,44,12,.97); border-bottom: 1px solid #6b5320; }
+      #offline-bar[hidden] { display: none; }
+      #offline-bar b { color: #ffe1a3; }
       #status { position: fixed; left: 12px; right: 12px; bottom: 34px; z-index: 40; margin: 0; padding: 10px 12px; border-radius: 10px; font-size: 13px; line-height: 1.5; background: rgba(20,26,34,.97); border: 1px solid #2b3442; box-shadow: 0 6px 20px rgba(0,0,0,.45); pointer-events: none; }
       #status:empty { display: none; }
       #status.err { color: #ff7b72; border-color: #5a2a2a; }
@@ -356,6 +360,12 @@
     </div>
     <!-- 问与解法的切换按钮。只有「一问多解」的题才会出现内容，别的题这里是空的。 -->
     <div id="qsel"></div>
+    <!-- 离线提示条：没网时挂在最上面，说清「哪些能用、哪些要等有网」。
+         做这个不是为了好看 —— 用户没网时最怕的是「是不是坏了」，
+         一句话说清楚比什么错误提示都管用。 -->
+    <div id="offline-bar" hidden>
+      现在没有网络：<b>拍照识别、解题、查余额</b>要等有网；已经存过的题目照样能看、能转、能导出。
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

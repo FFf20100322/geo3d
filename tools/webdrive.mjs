@@ -173,6 +173,22 @@ try {
     await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 })
   }
 
+  // `--offline`：**必须在导航之前断网**。
+  //
+  // 踩过一次：原先是在导航之后才断网，结果测出来「断网也能用」——
+  // 那只说明「已经打开的页面继续能用」（本来就该能，一切都在本地算），
+  // 完全没测到真正要紧的那件事：**没网的时候能不能把它打开**。
+  if (argv.includes('--offline')) {
+    await send('Network.enable')
+    await send('Network.emulateNetworkConditions', {
+      offline: true,
+      latency: 0,
+      downloadThroughput: 0,
+      uploadThroughput: 0,
+    })
+    console.log('已断网（导航之前就断了）')
+  }
+
   await send('Page.navigate', { url })
   await sleep(waitMs)
 
@@ -181,6 +197,23 @@ try {
     if (out === 'NOT_FOUND') throw new Error(`第 ${i + 1} 次点击找不到目标：${sel}`)
     console.log(`点击 ${i + 1}：${sel} → ${out}`)
     await sleep(1200) // 点完等界面反应，**必须等**，不然截到的是没反应的画面
+  }
+
+  // `--go-offline`：走到这里才断网，用来测「先联网打开一次、之后没网还能不能用」。
+  //
+  // 为什么必须同一个会话：每次跑都会新开一个干净的 Chrome，
+  // service worker 与缓存都留不下来 —— 分开跑的话第二次必然是「没缓存、打不开」，
+  // 那测的就不是同一件事了。
+  if (argv.includes('--go-offline')) {
+    await send('Network.enable')
+    await send('Network.emulateNetworkConditions', {
+      offline: true,
+      latency: 0,
+      downloadThroughput: 0,
+      uploadThroughput: 0,
+    })
+    console.log('已断网（这一会话中途断的）')
+    await sleep(800)
   }
 
   for (const [i, e] of evals.entries()) {
