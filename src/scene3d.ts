@@ -901,6 +901,30 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
       items.push({ el, x: sc.x, y: sc.y, dx: 0, dy: 0, w: estimateWidth(el.textContent ?? '') })
     }
 
+    // ⚠️ 这一段曾经**整段丢失**（函数只剩上面那个收集循环，算出来的 items 从没被用过）。
+    // 后果是：标注**不会被拉回屏幕内** —— 真机上看到的就是
+    // 「与底面所成角 = 1/3」那样半截挂在屏幕外。查出它靠的是「items 算了却没人用」
+    // 这个死代码迹象。
+
+    // **只做一件事：把跑出屏幕的拉回来。**
+    //
+    // 曾经在这里加过「重叠的一对对互相推开」，结果更糟 —— 五条标注被挤成一行，
+    // 反而比原来难读。而且用户早就定过规矩：**标注直接贴着摆、不做避让**
+    // （重叠是认下来的取舍，不是 bug）。所以这里不做推开，
+    // 只解决「跑出屏幕根本看不见」这一种情况 —— 那不是难读，是白标了。
+    const cw = renderer.domElement.getBoundingClientRect().width
+    const ch = renderer.domElement.getBoundingClientRect().height
+    // 一行字大概多高。只用来给上下留边，不做重叠判定。
+    const LINE_H = 20
+    for (const it of items) {
+      const half = it.w / 2 + 6
+      const x = Math.min(Math.max(it.x, half), Math.max(half, cw - half))
+      const y = Math.min(Math.max(it.y, LINE_H), Math.max(LINE_H, ch - LINE_H))
+      // 用 **margin** 不用 transform —— CSS2DRenderer 每帧都会重写 transform
+      // （那是它把标签摆到投影点的办法），改 transform 会被它盖掉；margin 它不碰。
+      it.el.style.marginLeft = `${Math.round(x - it.x)}px`
+      it.el.style.marginTop = `${Math.round(y - it.y)}px`
+    }
   }
 
   /**

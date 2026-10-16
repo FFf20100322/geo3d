@@ -2114,14 +2114,27 @@ function basisAnnotations(): { shape: AnnotationShape; kind: string; tier: 1 | 2
     const base0 = coefInBasis(o, v1, v2, v3, a)
     const d = base0 ? [c[0] - base0[0], c[1] - base0[1], c[2] - base0[2]] : c
     const name = t.label ?? `${t.from}${t.to}`
-    const parts = d.map((k, i) => `${fmtNum(k)}·${basis[i].label ?? '基' + (i + 1)}`).join(' + ')
+    // **系数为 0 的项不写。** 基底有三个方向，可目标向量常常只用到其中一两个 ——
+    // 全写出来的话是「EF = −0.15·AB + 0.6·AD + 0·AA₁」，里面那个「0·AA₁」纯属占地方，
+    // 而手机上这几个字正好压在别的标注上（真机上亲眼见的）。
+    // 另外负系数写成「− 0.6·AD」而不是「+ -0.6·AD」，读起来才像数学式子。
+    const terms: string[] = []
+    d.forEach((k, i) => {
+      if (Math.abs(k) < 1e-9) return
+      const label = basis[i].label ?? `基${i + 1}`
+      const mag = `${fmtNum(Math.abs(k))}·${label}`
+      if (!terms.length) terms.push(k < 0 ? `−${mag}` : mag)
+      else terms.push(`${k < 0 ? '−' : '+'} ${mag}`)
+    })
+    // 一个方向都没用到（理论上不该发生）就给个 0，别让标签变成空的
+    if (!terms.length) terms.push('0')
     out.push({
       shape: {
         arc: [],
         extras: [],
         // 标签摆在目标向量的中点，一眼能看出它说的是哪条
         labelAt: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2],
-        text: `${name} = ${parts}`,
+        text: `${name} = ${terms.join(' ')}`,
       },
       kind: 'basis',
       tier: 1,
