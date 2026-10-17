@@ -1,5 +1,5 @@
 import { parseScene } from './scene.ts'
-import { mergeSolution, parseElementName, parseSolution, stepTimeline } from './solution.ts'
+import { canonicalVia, mergeSolution, parseElementName, parseSolution, stepTimeline } from './solution.ts'
 import { solve, type Vec3 } from './solver.ts'
 import { verifySymbolic } from './symbolic.ts'
 
@@ -242,6 +242,47 @@ console.log('\n【uses 结构化以后，高亮数据能直接拿去用】')
   const u = sol2.steps[0].uses
   ok('点归点', u.points.length === 1 && u.points[0] === 'A')
   ok('棱归棱', u.edges.length === 1 && u.edges[0][0] === 'B' && u.edges[0][1] === 'C')
+}
+
+console.log('\n【解法名归一化：模型怎么写都要认得出来】')
+{
+  // 这条是审计抓出来的，属于「功能做了、代码也对，就是走不通」那一类：
+  // 提示词里写的是「坐标法」，而画三条蓝轴、标 x/y/z、标坐标，用的都是 `=== '坐标系法'`。
+  // 模型照提示词答「坐标法」时一切自洽、没有任何报错，**那三条轴一条都不画**。
+  ok('「坐标法」归一成「坐标系法」', canonicalVia('坐标法') === '坐标系法', canonicalVia('坐标法'))
+  ok('「坐标系法」原样保留', canonicalVia('坐标系法') === '坐标系法')
+  ok('前后空格不影响', canonicalVia('  坐标法 ') === '坐标系法', canonicalVia('  坐标法 '))
+  ok('「向量」也归一', canonicalVia('向量') === '向量法')
+  ok('「基底」也归一', canonicalVia('基底') === '基底法')
+  // **不认识的解法名要原样留着** —— 那可能是我们没预设过的一种做法；
+  // 归一化把它吞掉的话会变成「两个按钮其实是同一个」，更难查。
+  ok('不认识的解法名原样保留', canonicalVia('面积法') === '面积法', canonicalVia('面积法'))
+
+  // 走一遍真正的解析：steps 里的 via 出来时就该是规范名
+  const scene = parseScene({
+    points: [
+      { name: 'A', kind: 'free', at: [0, 0, 0] },
+      { name: 'B', kind: 'free', at: [1, 0, 0] },
+      { name: 'C', kind: 'free', at: [0, 1, 0] },
+    ],
+    constraints: [
+      { kind: 'distance', a: 'A', b: 'B', value: 1 },
+      { kind: 'distance', a: 'A', b: 'C', value: 1 },
+      { kind: 'perpendicular', p: ['A', 'B'], q: ['A', 'C'] },
+    ],
+    edges: [['A', 'B']],
+    faces: [],
+  })
+  const sol = parseSolution(
+    {
+      steps: [{ title: 't', text: 'x', why: 'w', q: '1', via: '坐标法', addPoints: [], addEdges: [], uses: [] }],
+      answers: [],
+      angles: [],
+      lengths: [],
+    },
+    scene,
+  )
+  ok('解析出来的 via 已经是规范名', sol.steps[0]?.via === '坐标系法', String(sol.steps[0]?.via))
 }
 
 console.log(`\n${failed === 0 ? '✓ 全部通过' : `✗ ${failed} 项未通过`}`)

@@ -1,6 +1,7 @@
 import {
   checkFacesPlanar,
   parseScene,
+  gridLines,
   sceneForQuestion,
   toDisplayName,
   toRenderable,
@@ -159,6 +160,45 @@ console.log('\n【某一问独有的条件（「若」那一类）不能串问�
     const PE = Math.hypot(P['E'][0] - P['P'][0], P['E'][1] - P['P'][1], P['E'][2] - P['P'][2])
     ok('第（2）问里 E 确实在中点上', Math.abs(PE - Math.SQRT2) < 1e-6, `PE = ${PE.toFixed(6)}`)
   }
+}
+
+console.log('\n【坐标平面上的网格】')
+{
+  // 用户要求：三个坐标平面各铺一层网格，格子 1 个单位，范围与坐标轴一样长，轴到头就停。
+  // 取一组好算的：原点在原点，三条方向就是三个坐标轴。
+  const axes: [Vec3, Vec3, Vec3] = [
+    [1, 0, 0],
+    [0, 1, 0],
+    [0, 0, 1],
+  ]
+  const segs = gridLines([0, 0, 0], axes, 2)
+  ok('三个平面都有线', segs.length > 0, `${segs.length} 条`)
+
+  // 每一条的两端都必须在轴长之内 —— 这就是「轴到头就不再显示」
+  let outside = 0
+  for (const [a, b] of segs) {
+    for (const p of [a, b]) if (p.some((x) => x < -1e-6 || x > 2 + 1e-6)) outside++
+  }
+  ok('所有格线都落在轴长之内（轴到头就停）', outside === 0, outside ? `${outside} 个端点越界` : '')
+
+  // 整数格线：3 个平面 × 两个方向 × 3 条（0、1、2）
+  ok('整数格线的条数够（至少 18 条）', segs.length >= 18, `${segs.length}`)
+
+  // 轴长不是整数时（真实情况是 1.25 个单位），最外圈要封口，而且**封到轴的长度上**
+  const partial = gridLines([0, 0, 0], axes, 1.25)
+  const reach = partial.filter(([a, b]) => [a, b].some((p) => p.some((x) => Math.abs(x - 1.25) < 1e-9)))
+  ok('轴长不是整数时，外圈封到了轴的长度上', reach.length > 0, `${reach.length} 条到 1.25 的线`)
+
+  // 原点挪了，网格要跟着挪
+  const moved = gridLines([10, 20, 30], axes, 1)
+  ok(
+    '原点挪了，网格跟着挪',
+    moved.some(([a, b]) => (a[0] === 10 && a[1] === 20 && a[2] === 30) || (b[0] === 10 && b[1] === 20 && b[2] === 30)),
+  )
+
+  // 退化：轴长为 0 或负数时不能崩，也不该画出一堆线
+  ok('轴长为 0 时什么都不画', gridLines([0, 0, 0], axes, 0).length === 0)
+  ok('轴长为负时什么都不画', gridLines([0, 0, 0], axes, -3).length === 0)
 }
 
 console.log(`\n${failed === 0 ? '✓ 全部通过' : `✗ ${failed} 项未通过`}`)

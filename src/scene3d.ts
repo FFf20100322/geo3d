@@ -59,6 +59,12 @@ export interface Scene3d {
    * 所以只能给坐标。给坐标还有个好处：跟着动点走，因为每次重画都会重新算。
    */
   setArrows(list: { from: string | Vec3; to: string | Vec3; color: 'yellow' | 'blue'; label?: string; extend?: number }[]): void
+  /**
+   * 三个坐标平面上的网格（坐标法才用）。
+   * 传空数组就是关掉。坐标在**世界坐标**里直接给 —— 网格是算出来的，
+   * 不对应图上任何一个点，所以只能给坐标。
+   */
+  setGrid(segments: [Vec3, Vec3][]): void
   /** 允许被手指抓住的点。命中判定用实时坐标，所以拖完之后不用重新登记。 */
   setGrabbables(names: string[]): void
   /**
@@ -254,8 +260,32 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
     }
   }
 
+  /**
+   * 坐标平面的网格。**淡灰色**、细线、不参与拾取 ——
+   * 它是给你「数格子」用的参考，不该抢图形和标注的注意力。
+   *
+   * 单独一个 Group：它和箭头一样是「解释性」的东西，换场景时要一起清掉。
+   */
+  const gridGroup = new THREE.Group()
+  scene.add(gridGroup)
+  const matGrid = new THREE.LineBasicMaterial({ color: 0x5a6472, transparent: true, opacity: 0.55 })
+
+  function setGrid(segments: [Vec3, Vec3][]): void {
+    for (const g of [...gridGroup.children]) gridGroup.remove(g)
+    if (!segments.length) return
+    // 一次性把全部线段塞进一个 BufferGeometry —— 几百条线分成几百个对象，
+    // 每帧都要各自算一次矩阵，没必要。
+    const pts: number[] = []
+    for (const [a, b] of segments) pts.push(a[0], a[1], a[2], b[0], b[1], b[2])
+    const geo = new THREE.BufferGeometry()
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3))
+    gridGroup.add(new THREE.LineSegments(geo, matGrid))
+  }
+
   function setScene(r: Renderable) {
     group.clear()
+    // 注意：gridGroup 与 solidGroup 都挂在 scene 上，group.clear() 清不到它们，所以自己清
+    for (const g of [...gridGroup.children]) gridGroup.remove(g)
     // 注意：solidGroup 挂在 scene 上，group.clear() 清不到它，所以自己清
     for (const s of [...solidGroup.children]) solidGroup.remove(s)
     for (const s of r.solids ?? []) addSolid(s)
@@ -1045,6 +1075,7 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
     setAnnotations,
     setPositions,
     setArrows,
+    setGrid,
     setGrabbables: (names) => {
       grabbables = names
     },

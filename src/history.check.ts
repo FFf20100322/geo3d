@@ -135,5 +135,37 @@ console.log('\n【删除与清空】')
   ok('清空后为空', h.list().length === 0)
 }
 
+console.log('\n【存档里的每一样都要留得住】')
+{
+  // 这条是审计抓出来的：history.save 曾经手工列举字段，后来 HistoryRecord 加了
+  // image（原图）与 solution（解答），那两行没人补 —— 于是**每次保存都静默丢掉**。
+  // 后果很贵：从历史打开一道题解答没了（要重新花钱问模型），导出的 .g3d 里也没有原图。
+  //
+  // 所以这里逐项核对：传进去的每一样，读回来都必须在。**将来再加字段，这一条也会兜住。**
+  const store = fakeStore().store
+  const h = createHistory(store)
+  const sol = { steps: [{ title: 't', text: 'x' }], answers: [], angles: [], lengths: [] }
+  const saved = h.save({
+    problemText: '带齐所有字段的一道题',
+    extra: '补充条件',
+    thumbnail: 'data:image/png;base64,THUMB',
+    image: 'data:image/png;base64,IMAGE',
+    scene: undefined,
+    solution: sol as never,
+  })
+  const back = h.list().find((r) => r.id === saved.id)
+  ok('原图留住了', back?.image === 'data:image/png;base64,IMAGE', String(back?.image))
+  ok('缩略图留住了', back?.thumbnail === 'data:image/png;base64,THUMB')
+  ok('解答留住了', !!back?.solution && (back.solution as { steps?: unknown[] }).steps?.length === 1)
+  ok('补充条件留住了', back?.extra === '补充条件')
+  ok('题面留住了', back?.problemText === '带齐所有字段的一道题')
+
+  // 同一道题再存一次：更新，不是新增；而且这次传的字段也要留住
+  h.save({ problemText: '带齐所有字段的一道题', extra: '改了', image: 'data:image/png;base64,IMAGE2' })
+  const again = h.list()
+  ok('同一道题不会存两条', again.length === 1, `${again.length} 条`)
+  ok('再存一次时新传的原图也留住', again[0]?.image === 'data:image/png;base64,IMAGE2')
+}
+
 console.log(`\n${failed === 0 ? '✓ 全部通过' : `✗ ${failed} 项未通过`}`)
 if (failed > 0) process.exit(1)

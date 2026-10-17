@@ -56,6 +56,7 @@ import {
   checkFacesPlanar,
   edgeKey,
   faceKey,
+  gridLines,
   parseScene,
   sceneForQuestion,
   toRenderable,
@@ -227,6 +228,8 @@ function refreshAnnotations(): void {
   // 挂在末尾的话「向量法/基底法/坐标系法」的箭头就永远画不出来（真机上踩过：
   // 选着向量法却一根箭头都没有，因为这个函数在标注关着时提前返回了）。
   scene?.setArrows(methodArrows())
+  // 坐标法的网格：和箭头一样属于「解释性」的东西，跟着一起刷新
+  scene?.setGrid(frameGrid())
 
   if (base && pts) {
     const radius = suggestRadius(Object.values(pts))
@@ -2381,6 +2384,38 @@ function afterPick(): void {
 }
 
 /**
+ * 坐标轴伸出去多少（相对「1 个单位」）。
+ *
+ * **网格必须用同一个数** —— 用户要求网格的范围与坐标轴一样长、轴到头就不再显示。
+ * 两处各写一个数的话，改了一处忘了另一处，网格就会比轴长一截或短一截。
+ */
+const AXIS_EXTEND = 1.25
+
+/**
+ * 三个坐标平面上的网格线（坐标法才画）。
+ *
+ * 用户要求：格子边长 1 个单位、淡灰色、范围与坐标轴一样长、轴到头就停。
+ * 之所以要有它：只画三条轴，图上看不出「1 个单位有多长」——
+ * 点 A(0,0,2) 里那个 2 到底有多远全凭想象；有了格子，一眼能数出来。
+ */
+function frameGrid(): [Vec3, Vec3][] {
+  if (viaPick !== '坐标系法') return []
+  const f = currentSolution?.frame
+  const P = currentSolvedAll
+  if (!f || !P) return []
+  const o = P[f.origin]
+  const a = P[f.x]
+  const b = P[f.y]
+  const c = P[f.z]
+  if (!o || !a || !b || !c) return []
+  // 轴上那三个点离原点正好是「1 个单位」，所以它们本身就是三个单位向量，直接当方向用。
+  const ex: Vec3 = [a[0] - o[0], a[1] - o[1], a[2] - o[2]]
+  const ey: Vec3 = [b[0] - o[0], b[1] - o[1], b[2] - o[2]]
+  const ez: Vec3 = [c[0] - o[0], c[1] - o[1], c[2] - o[2]]
+  return gridLines(o, [ex, ey, ez], AXIS_EXTEND)
+}
+
+/**
  * 三种解题法各自要在图上画出来的东西。
  *
  * - **向量法**：黄色的向量，**一律带箭头**（解答里 arrows 标 yellow 的那些）
@@ -2420,9 +2455,9 @@ function methodArrows(): { from: string | Vec3; to: string | Vec3; color: 'yello
     if (!f) return []
     // 空间直角坐标系：从原点出发的三条轴，都用蓝色，**各自标上 x / y / z** ——
     // 不标的话看图的人根本分不出哪条是哪条。
-    // **延长到 1.7 倍**：三个轴上取的点本来就在图形自己的顶点上（A、B、D、A₁），
+    // **延长到 1.25 倍**（注释原来写着 1.7 —— 1.7 试过，取景被拉太远、图形变得很小，改回 1.25 时忘了改注释）：三个轴上取的点本来就在图形自己的顶点上（A、B、D、A₁），
     // 不延长的话箭头正好停在那些点上、和原点标注糊成一片，也看不出轴伸到哪里。
-    const EXT = 1.25
+    const EXT = AXIS_EXTEND
     return [
       { from: f.origin, to: f.x, color: 'blue' as const, label: 'x', extend: EXT },
       { from: f.origin, to: f.y, color: 'blue' as const, label: 'y', extend: EXT },

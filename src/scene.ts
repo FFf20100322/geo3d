@@ -473,6 +473,49 @@ export interface Renderable {
   }[]
 }
 
+/**
+ * 三个坐标平面上的**正方形网格**的线段。
+ *
+ * 用户要求：坐标法时，每两个坐标轴构成的平面（一共三个）都铺一层**淡灰色**的网格，
+ * 格子边长 **1 个单位**，网格的范围**与坐标轴一样长**，**轴到头就不再画**。
+ *
+ * 为什么要有它：只画三条轴，图上看不出「1 个单位有多长」——
+ * 点 A(0,0,2) 里那个 2 到底有多远，全凭想象。有了格子，一眼就能数出来。
+ *
+ * 轴的长度一般不是整数个单位（现在是 1.25 个单位），所以最外圈会剩一小条 ——
+ * 这是**照要求做的**：范围与轴一样长、格子是 1 个单位，两者凑不整时只能这样。
+ *
+ * 返回线段列表（每条两端），交给渲染层去画。
+ */
+export function gridLines(origin: Vec3, axes: [Vec3, Vec3, Vec3], extent: number): [Vec3, Vec3][] {
+  const out: [Vec3, Vec3][] = []
+  // 轴长为 0 或负数时**一条都不画**。
+  // （自检抓过：不加这一句的话，退出循环前的 i=0 会留下一地零长度的退化线段 ——
+  //   渲染层画它们什么也看不见，但白白占着内存，而且让「有多少条格线」这个数变得没法用。）
+  if (!(extent > 1e-6)) return out
+  // 在某个平面上取一个点：u 沿第一条方向、v 沿第二条方向
+  const at = (plane: number, s: number, t: number): Vec3 => {
+    const [i, j] = plane === 0 ? [0, 1] : plane === 1 ? [1, 2] : [2, 0]
+    const a = axes[i]
+    const b = axes[j]
+    return [origin[0] + a[0] * s + b[0] * t, origin[1] + a[1] * s + b[1] * t, origin[2] + a[2] * s + b[2] * t]
+  }
+  const n = Math.max(0, Math.floor(extent))
+  for (let plane = 0; plane < 3; plane++) {
+    // 整数位置的格线：0、1、…、n
+    for (let i = 0; i <= n; i++) {
+      out.push([at(plane, i, 0), at(plane, i, extent)]) // 沿第二条方向
+      out.push([at(plane, 0, i), at(plane, extent, i)]) // 沿第一条方向
+    }
+    // 轴到头那一条边（范围与轴一样长，所以最外圈要封上）
+    if (extent - n > 1e-6) {
+      out.push([at(plane, extent, 0), at(plane, extent, extent)])
+      out.push([at(plane, 0, extent), at(plane, extent, extent)])
+    }
+  }
+  return out
+}
+
 /** 每个共面一个颜色，循环取用 */
 const PALETTE = [0x4f8cff, 0xff9f43, 0x2ecc71, 0xe74c3c, 0x9b59b6, 0xf1c40f, 0x1abc9c, 0xff7ab8]
 

@@ -86,14 +86,21 @@ export function createHistory(store: Store): History {
       const all = read()
       const existing = all.find((r) => (input.id && r.id === input.id) || r.problemText === input.problemText)
       const rest = all.filter((r) => r !== existing)
+      // **先把传进来的东西整个铺开**，再覆盖要自己定的两个字段。
+      //
+      // 这里是第二次踩同一个坑（第一次是 solution.ts 的 mergeSolution）：
+      // 原来是手工列举字段（id/savedAt/problemText/extra/thumbnail/scene），
+      // 后来 HistoryRecord 加了 image（原图）与 solution（解答），
+      // **这两行没人补上，于是每次都静默丢掉** —— 后果很贵：
+      //   · 从历史里打开一道题，解答没了，只能重新花钱问一次模型
+      //   · 用户明确要求「存档保留所有的东西」，原图也是其中一样
+      //   · 导出 .g3d 时自然也没有原图和解答（而 g3d.ts 的注释还写着「存档里本来就留着全部东西」）
+      // 铺开写法之后，往 HistoryRecord 上加字段就**不需要再改这里**了。
       const rec: HistoryRecord = {
+        ...input,
         // 同一道题再存一次时沿用原来的 id，免得任何持有这个 id 的地方突然失效
         id: existing?.id ?? input.id ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
         savedAt: Date.now(),
-        problemText: input.problemText,
-        extra: input.extra,
-        thumbnail: input.thumbnail,
-        scene: input.scene,
       }
       // 超出上限就丢最旧的（按时间排，不是按写入顺序）
       rest.sort((a, b) => b.savedAt - a.savedAt)

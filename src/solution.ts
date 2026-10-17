@@ -101,8 +101,27 @@ export interface Solution {
 
 const ANGLE_KINDS = ['lineLine', 'linePlane', 'dihedral'] as const
 
-/** 解析一条角度看描述。引用不存在的点就报错，不猜。 */
-function parseAngle(raw: unknown, i: number, ref: (x: unknown, what: string) => string): AngleSpec {
+/**
+ * 把解法名**归一化**成代码里认的那三个。
+ *
+ * 踩过一次，而且是「功能做了却走不通」那种：提示词里写的是「坐标法」，
+ * 而 main.ts 里画三条蓝轴、标 x/y/z、标坐标，用的都是 `viaPick === '坐标系法'`。
+ * 模型按提示词答「坐标法」，一切**自洽、没有任何报错**，就是那三条轴一条都不画 ——
+ * 用户点「坐标系法」看到的是一张普通图，完全不知道哪里出了问题。
+ *
+ * 所以在**解析这一处**归一化：模型怎么写都能认，下游一律拿规范名。
+ * 比在每个用到处都写一堆判断可靠得多。
+ */
+export function canonicalVia(name: string): string {
+  const s = name.trim()
+  // 坐标系的写法有好几种（「坐标法」是提示词里原来的写法，历史存档里也存着它）
+  if (s === '坐标法' || s === '坐标系' || s === '建系法' || s === '空间直角坐标系') return '坐标系法'
+  if (s === '向量' || s === '向量法') return '向量法'
+  if (s === '基底' || s === '基底法') return '基底法'
+  return s // 别的名字原样留着 —— 可能是一种我们没预设的做法，不该被吞掉
+}
+
+/** 解析一条角度看描述。引用不存在的点就报错，不猜。 */function parseAngle(raw: unknown, i: number, ref: (x: unknown, what: string) => string): AngleSpec {
   if (!isObj(raw)) throw new SolutionError(`第 ${i + 1} 个角不是对象`)
   const kind = str(raw.kind, `第 ${i + 1} 个角的 kind`)
   if (!(ANGLE_KINDS as readonly string[]).includes(kind)) {
@@ -272,7 +291,7 @@ export function parseSolution(raw: unknown, scene: Scene): Solution {
 
     // 这两项是可选的：只有「一问多解、要按钮切换」的题才填，其余题不受影响
     const q = typeof s.q === 'string' || typeof s.q === 'number' ? String(s.q) : undefined
-    const via = typeof s.via === 'string' && s.via.trim() ? readable(s.via) : undefined
+    const via = typeof s.via === 'string' && s.via.trim() ? canonicalVia(readable(s.via)) : undefined
     steps.push({ title, text, why, addPoints, addEdges, uses, q, via })
   }
 
