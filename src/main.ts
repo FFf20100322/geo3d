@@ -2497,17 +2497,38 @@ function afterPick(): void {
 }
 
 /**
- * 坐标轴伸出去多少（相对「1 个单位」）。
+ * 坐标轴要伸多长（单位：一个长度单位）。
  *
- * **网格必须用同一个数** —— 用户要求网格的范围与坐标轴一样长、轴到头就不再显示。
- * 两处各写一个数的话，改了一处忘了另一处，网格就会比轴长一截或短一截。
+ * 用户的要求，三句话：
+ *   ① **每一格的边长必须正好是 1 个长度单位**（格子必须是正方形）；
+ *   ② 坐标轴**比整个 3D 模型大就行**，没有具体上限；
+ *   ③ **铺不满就留一点点在外面** —— 所以轴长取整数个单位，
+ *      最后一格有多少空着就空着，不要为了凑满把格子改小。
+ *
+ * 原来这里写死 1.25 —— 那是错的：正方体棱长 2 的话，模型跨 **2 个单位**，
+ * 轴伸 1.25 根本**没盖住模型**，图会戳到坐标系外面去。
+ * 现在按模型实际大小算，再**向上取整**到整数个单位（至少 1 个）。
+ *
+ * 「1 个单位有多长」是**按题定的**：它由解答给出的 frame 决定
+ * （比如 A→B 就是一个单位），所以题目用厘米还是别的，都跟着题走。
  */
-const AXIS_EXTEND = 1.25
+function axisExtent(origin: Vec3, dirs: Vec3[], points: Record<string, Vec3>): number {
+  let reach = 0
+  for (const d of dirs) {
+    // d 本身就是单位向量（原点到轴上的取点正好 1 个单位），所以点乘出来直接就是「几个单位」
+    for (const p of Object.values(points)) {
+      const v: Vec3 = [p[0] - origin[0], p[1] - origin[1], p[2] - origin[2]]
+      reach = Math.max(reach, Math.abs(v[0] * d[0] + v[1] * d[1] + v[2] * d[2]))
+    }
+  }
+  // 减一点点再取整，免得 2.0000001 变成 3 个单位（多铺一整格空的）
+  return Math.max(1, Math.ceil(reach - 1e-6))
+}
 
 /**
  * 三个坐标平面上的网格线（坐标法才画）。
  *
- * 用户要求：格子边长 1 个单位、淡灰色、范围与坐标轴一样长、轴到头就停。
+ * 用户要求：每格边长 1 个长度单位（正方形）、淡灰色、范围与坐标轴一样长、轴到头就停。
  * 之所以要有它：只画三条轴，图上看不出「1 个单位有多长」——
  * 点 A(0,0,2) 里那个 2 到底有多远全凭想象；有了格子，一眼能数出来。
  */
@@ -2525,7 +2546,7 @@ function frameGrid(): [Vec3, Vec3][] {
   const ex: Vec3 = [a[0] - o[0], a[1] - o[1], a[2] - o[2]]
   const ey: Vec3 = [b[0] - o[0], b[1] - o[1], b[2] - o[2]]
   const ez: Vec3 = [c[0] - o[0], c[1] - o[1], c[2] - o[2]]
-  return gridLines(o, [ex, ey, ez], AXIS_EXTEND)
+  return gridLines(o, [ex, ey, ez], axisExtent(o, [ex, ey, ez], P))
 }
 
 /**
@@ -2568,9 +2589,27 @@ function methodArrows(): { from: string | Vec3; to: string | Vec3; color: 'yello
     if (!f) return []
     // 空间直角坐标系：从原点出发的三条轴，都用蓝色，**各自标上 x / y / z** ——
     // 不标的话看图的人根本分不出哪条是哪条。
-    // **延长到 1.25 倍**（注释原来写着 1.7 —— 1.7 试过，取景被拉太远、图形变得很小，改回 1.25 时忘了改注释）：三个轴上取的点本来就在图形自己的顶点上（A、B、D、A₁），
-    // 不延长的话箭头正好停在那些点上、和原点标注糊成一片，也看不出轴伸到哪里。
-    const EXT = AXIS_EXTEND
+    //
+    // 轴伸多长：**按模型实际大小算**，取整到一个长度单位。
+    // 用户的要求是「比整个 3D 模型大就行，没有具体上限；铺不满就留一点点在外面」，
+    // 而且**每一格的边长必须正好是一个长度单位** —— 所以轴长只能取整数个单位。
+    // 原来这里写死 1.25，正方体棱长 2 时模型跨 2 个单位，轴根本没盖住模型。
+    const P = currentSolvedAll
+    const o = P?.[f.origin]
+    const pts = [
+      [f.x, P?.[f.x]],
+      [f.y, P?.[f.y]],
+      [f.z, P?.[f.z]],
+    ] as [string, Vec3 | undefined][]
+    let EXT = 1
+    if (P && o) {
+      const dirs: Vec3[] = pts.map(([, p]) => [
+        (p?.[0] ?? 0) - o[0],
+        (p?.[1] ?? 0) - o[1],
+        (p?.[2] ?? 0) - o[2],
+      ])
+      EXT = axisExtent(o, dirs, P)
+    }
     return [
       { from: f.origin, to: f.x, color: 'blue' as const, label: 'x', extend: EXT },
       { from: f.origin, to: f.y, color: 'blue' as const, label: 'y', extend: EXT },

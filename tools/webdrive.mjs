@@ -67,6 +67,10 @@ const chrome = spawn(CHROME, [
   '--hide-scrollbars',
   '--enable-unsafe-swiftshader',
   '--use-gl=swiftshader',
+  // **开发服务器现在是 https（自签证书），验收工具必须忽略证书错误。**
+  // 没有这一条的话，Chrome 直接拒绝连接 —— 表现是「socket hang up」或者页面根本没加载，
+  // 看起来像应用坏了，其实是工具连不上。自己签的证书自己用，忽略它是安全的。
+  '--ignore-certificate-errors',
   '--window-size=1280,2200',
   'about:blank',
 ], { stdio: 'ignore' })
