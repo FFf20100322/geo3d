@@ -5,3 +5,6 @@ dist/
 .phone/
 .tmp-commit-msg.txt
 .commitmsg
+
+# 自签证书与私钥：不进仓库（每台机器各生成各的，私钥也不该提交）
+.certs/
