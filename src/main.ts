@@ -2532,11 +2532,44 @@ function axisExtent(origin: Vec3, dirs: Vec3[], points: Record<string, Vec3>): n
  * 之所以要有它：只画三条轴，图上看不出「1 个单位有多长」——
  * 点 A(0,0,2) 里那个 2 到底有多远全凭想象；有了格子，一眼能数出来。
  */
+/**
+ * **把解答给的坐标系掰成右手系。**
+ *
+ * 用户报过一次实错：坐标系法下 X 轴和 Y 轴标反了 ——
+ * 从顶面（+z 往下看）看，**Y 轴应该在 X 轴逆时针 90° 的位置**。
+ * 换句话说必须满足右手定则 `x × y = z`；算出来跟 z 反向，就是**左手系**，
+ * 空间直角坐标系不可能是左手的，所以那是解答写反了。
+ *
+ * 为什么不直接信解答：模型偶尔会把两个轴的点写颠倒（把 D 当 x、把 B 当 y 之类），
+ * 这时整张图的坐标读数都会跟着错，而**图上完全看不出来** —— 正是本项目最怕的那种错。
+ * 掰正的方式就是用户说的那个：**把 X 与 Y 对调**（对调任意两个轴都能把左手系变成右手系，
+ * 而「X、Y 标反」正是对调这两个）。
+ */
+function rightHanded(f: { origin: string; x: string; y: string; z: string }, P: Record<string, Vec3>) {
+  const o = P[f.origin]
+  const a = P[f.x]
+  const b = P[f.y]
+  const c = P[f.z]
+  if (!o || !a || !b || !c) return f
+  const ex: Vec3 = [a[0] - o[0], a[1] - o[1], a[2] - o[2]]
+  const ey: Vec3 = [b[0] - o[0], b[1] - o[1], b[2] - o[2]]
+  const ez: Vec3 = [c[0] - o[0], c[1] - o[1], c[2] - o[2]]
+  // x × y
+  const cr: Vec3 = [
+    ex[1] * ey[2] - ex[2] * ey[1],
+    ex[2] * ey[0] - ex[0] * ey[2],
+    ex[0] * ey[1] - ex[1] * ey[0],
+  ]
+  const sameSide = cr[0] * ez[0] + cr[1] * ez[1] + cr[2] * ez[2]
+  return sameSide < 0 ? { ...f, x: f.y, y: f.x } : f
+}
+
 function frameGrid(): [Vec3, Vec3][] {
   if (viaPick !== '坐标系法') return []
-  const f = currentSolution?.frame
+  const raw = currentSolution?.frame
   const P = currentSolvedAll
-  if (!f || !P) return []
+  if (!raw || !P) return []
+  const f = rightHanded(raw, P) // 左手系先掰正，否则网格也跟着是歪的
   const o = P[f.origin]
   const a = P[f.x]
   const b = P[f.y]
@@ -2585,8 +2618,11 @@ function methodArrows(): { from: string | Vec3; to: string | Vec3; color: 'yello
     return out
   }
   if (viaPick === '坐标系法') {
-    const f = sol.frame
-    if (!f) return []
+    const rawFrame = sol.frame
+    if (!rawFrame) return []
+    // **左手系先掰正**（用户报过 X/Y 标反：从顶面看 Y 该在 X 逆时针 90°）。
+    // 必须和 frameGrid 用同一份掰正后的坐标系，否则网格与轴会各指各的。
+    const f = currentSolvedAll ? rightHanded(rawFrame, currentSolvedAll) : rawFrame
     // 空间直角坐标系：从原点出发的三条轴，都用蓝色，**各自标上 x / y / z** ——
     // 不标的话看图的人根本分不出哪条是哪条。
     //
