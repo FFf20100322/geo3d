@@ -1177,6 +1177,7 @@ function loadBuiltinDemo(which: 'tetra' | 'cube' | 'fold' | 't1' | 't2' = 'tetra
           : which === 't2'
             ? [T2_PROBLEM, T2_SCENE, T2_SOLUTION]
             : [DEMO_PROBLEM, DEMO_SCENE, DEMO_SOLUTION]
+  resetPerProblemState()
   $<HTMLTextAreaElement>('problem-text').value = problem
   $<HTMLTextAreaElement>('extra').value = ''
   $('points').textContent = ''
@@ -1230,7 +1231,11 @@ function renderSavedList(): void {
  * 列表渲染。两类共用一套 —— 历史记录与导入的题目在界面上就该长得一样，
  * 差别只在「从哪来」，不该让用户学两种看法。
  */
-function renderPickList(boxId: string, items: { title: string; desc: string; run: () => void }[], empty: string): void {
+function renderPickList(
+  boxId: string,
+  items: { title: string; desc: string; run: () => void; actions?: { text: string; onClick: () => void }[] }[],
+  empty: string,
+): void {
   const box = $(boxId)
   box.innerHTML = ''
   if (!items.length) {
@@ -1241,29 +1246,65 @@ function renderPickList(boxId: string, items: { title: string; desc: string; run
     return
   }
   for (const it of items) {
-    const btn = document.createElement('button')
-    btn.className = 'pick-item'
+    // **一行不能用 <button>。**
+    // 踩过一次：这里原来是 `<button class="pick-item">`，而一行末尾想再放「导出」按钮 ——
+    // **<button> 里不能嵌套 <button>**（非法 HTML，浏览器会把里面的按钮甩出去），
+    // 结果那个按钮压根不显示，界面上什么都没有、也不报错。
+    // 改成 div + role="button"：能放行内按钮，键盘和读屏也还认得出它是可点的。
+    const row = document.createElement('div')
+    row.className = 'pick-item'
+    row.setAttribute('role', 'button')
+    row.tabIndex = 0
     const t = document.createElement('span')
     t.className = 't'
     t.textContent = it.title
     const d = document.createElement('span')
     d.className = 'd'
     d.textContent = it.desc
-    btn.append(t, d)
-    btn.onclick = () => it.run()
-    box.appendChild(btn)
+    row.append(t, d)
+    row.onclick = () => it.run()
+    row.onkeydown = (ev) => {
+      if (ev.key === 'Enter' || ev.key === ' ') {
+        ev.preventDefault()
+        it.run()
+      }
+    }
+    for (const a of it.actions ?? []) {
+      const b = document.createElement('button')
+      b.className = 'pick-act'
+      b.textContent = a.text
+      // 行本身的点击是「打开这道题」；点行尾的按钮不该顺带把题打开
+      b.onclick = (ev) => {
+        ev.stopPropagation()
+        a.onClick()
+      }
+      row.appendChild(b)
+    }
+    box.appendChild(row)
   }
 }
 
 /** 一条历史记录在列表里显示成什么样：标题取题面第一行，说明里写清这条存了哪些东西 */
-function historyItem(r: HistoryRecord): { title: string; desc: string; run: () => void } {
+function historyItem(r: HistoryRecord): {
+  title: string
+  desc: string
+  run: () => void
+  actions: { text: string; onClick: () => void }[]
+} {
   const kept = r.scene ? (r.solution ? '题面 · 解题过程 · 3D' : '题面 · 3D') : '只有文字'
   const withImg = r.image ? `原题图片 · ${kept}` : kept
   const first = (r.problemText.split('\n')[0] ?? '').trim()
   const title = first.length > 22 ? `${first.slice(0, 22)}…` : first || '（没有题面）'
   const d = new Date(r.savedAt)
   const when = `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-  return { title, desc: `${when}　${withImg}`, run: () => openRecord(r) }
+  return {
+    title,
+    desc: `${when}　${withImg}`,
+    run: () => openRecord(r),
+    // 「载入」页也要能导出 —— 用户是照我写的说明到这一页来找导出的，
+    // 而导出原来只做在「历史」页那一套列表上，两套列表长得还不一样。
+    actions: [{ text: '导出', onClick: () => void exportG3d(r) }],
+  }
 }
 
 /** 内部存储里目前有什么。导入功能做出来之前，这里只放内置的两道测试题。 */
@@ -1721,6 +1762,7 @@ function importG3d(): void {
 }
 
 /** 打开一条存档。有场景就直接进 3D，没有就回到文字页。 */function openRecord(r: HistoryRecord) {
+  resetPerProblemState()
   $<HTMLTextAreaElement>('problem-text').value = r.problemText
   $<HTMLTextAreaElement>('extra').value = r.extra
   $('points').textContent = ''
@@ -1827,6 +1869,7 @@ const EFFORTS = ['high', 'max'] as const
 
 /** 已经建过图就直接用，没建过就现建。解题过程需要知道图里有哪些点，所以绕不开这一步。 */
 async function ensureScene(problemText: string, extra: string): Promise<Scene | null> {
+  resetPerProblemState()
   if (currentScene) return currentScene
 
   let lastProblem = '未知原因'
@@ -2135,6 +2178,30 @@ let playTimer: number | undefined
  */
 const picked = { points: new Set<string>(), edges: new Set<string>(), faces: new Set<string>() }
 
+/**
+ * **换一整道题的时候，把这些「跟着上一道题留下的状态」清干净。**
+ *
+ * 审计抓到的：这些变量原来全都只在用户点选时改，换题一律不重置，于是
+ *   · picked：在题 A 点过的点/棱，到题 B 上仍被点亮（用户没点过）；
+ *   · qPick：标签写着「问：第(2)问」，而这道题根本没有第(2)问 ——
+ *     更糟的是 viewSolution 过滤后一条不剩时会静默回退成全部步骤，
+ *     于是「选了第(2)问」实际在放全部，用户看不出来；
+ *   · viaPick：残留成「坐标系法」时照样画黄箭头与 x/y/z 轴，
+ *     而若这道题的解答里没有 via，解法那一组芯片根本不渲染 ——
+ *     用户没有任何入口把它关掉，坐标轴会一直跟着后面每一道题。
+ *
+ * 注意：**换「问」时不能清 qPick/viaPick** —— 那正是用户刚选的东西。
+ * 所以只在「换一整道题」的入口调用它；换问走 applyQuestionScene，那里只清 picked。
+ */
+function resetPerProblemState(): void {
+  picked.points.clear()
+  picked.edges.clear()
+  picked.faces.clear()
+  qPick = ''
+  viaPick = ''
+  renderedQ = '\u0000'
+}
+
 /** 当前该高亮哪些元素（步骤 ∪ 手动点选）。都没有就返回 null 表示不强调任何东西。 */
 function highlightSets(): Highlight | null {
   const sol = currentSolution
@@ -2225,6 +2292,13 @@ function renderQSel(): void {
   if (!qs.length && !vias.length && !currentScene) {
     box.style.display = 'none'
     openGroup = ''
+    // **这里必须把工具条恢复显示。**
+    // 展开任一组时上半条工具条会被设成 visibility:hidden（免得和选项挤在一起），
+    // 而恢复它的那两行在函数末尾 —— 提前返回就跳过了。
+    // 后果（审计实测）：点开「问」组 → 回拍题页点「直接输入题目文字」→ 再点「3D」，
+    // 这时既没图形也没解答，走的就是这个分支，于是
+    // **「面 / 调节 / 标注 / ° / 完成」整排既看不见也点不到**，页面还一点提示都没有。
+    $('scene-tools').style.visibility = 'visible'
     return
   }
   box.style.display = 'flex'

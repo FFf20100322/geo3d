@@ -56,7 +56,12 @@
          两个固定定位的元素原来都压在底部，提示框会把那一行**整个盖住**。
          这是项目铁律「两个控件不能占同一位置」的一个实例。 */
       /* 没网时的提示条。挂在最上面一行，不挡下面的操作。 */
-      #offline-bar { position: fixed; top: 0; left: 0; right: 0; z-index: 60; padding: 7px 12px; font-size: 12.5px; line-height: 1.45; color: #ffd479; background: rgba(58,44,12,.97); border-bottom: 1px solid #6b5320; }
+      /* **必须让开顶栏。** 顶栏 #bar 是 fixed top:0、高 52px；
+         提示条原先也是 top:0 且 z-index 更高 —— 断网时它会把「拍题/3D/历史/设置」
+         整个盖住，而且**没加 pointer-events:none，连点击都被它吃掉**，
+         于是断网就等于失去了全部导航（用户只会以为软件坏了）。这是铁律⑤的实例。
+         现在：挪到顶栏下面，并且不接收点击。 */
+      #offline-bar { position: fixed; top: 52px; left: 0; right: 0; z-index: 19; pointer-events: none; padding: 7px 12px; font-size: 12.5px; line-height: 1.45; color: #ffd479; background: rgba(58,44,12,.97); border-bottom: 1px solid #6b5320; }
       #offline-bar[hidden] { display: none; }
       #offline-bar b { color: #ffe1a3; }
       #status { position: fixed; left: 12px; right: 12px; bottom: 34px; z-index: 40; margin: 0; padding: 10px 12px; border-radius: 10px; font-size: 13px; line-height: 1.5; background: rgba(20,26,34,.97); border: 1px solid #2b3442; box-shadow: 0 6px 20px rgba(0,0,0,.45); pointer-events: none; }
@@ -143,6 +148,13 @@
       .pick-item:hover { border-color: #3b82f6; }
       .pick-item .t { display: block; font-size: 14px; line-height: 1.5; color: #e5e7eb; }
       .pick-item .d { display: block; margin-top: 3px; font-size: 12px; color: #98a2b3; }
+      /* 行尾的动作按钮（导出这类）。行本身改成了 div，所以按钮放得进去 —— 
+         <button> 里不能嵌套 <button>，那样里面的按钮会被浏览器甩出去、根本不显示。 */
+      .pick-item { position: relative; }
+      .pick-act { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); padding: 10px 14px; font-size: 13px; border-radius: 8px; border: 1px solid #2b3442; background: #1c2430; color: #cbd5e1; }
+      .pick-act:hover { border-color: #3b82f6; color: #fff; }
+      /* 给按钮让出位置，免得长标题压在它下面 */
+      .pick-item { padding-right: 86px; }
       .pick-empty { font-size: 13px; color: #6b7280; }
       /* 后台任务进度条。建模与解题都是多阶段的长任务，没有它就像卡死了。 */
       #progress { position: fixed; top: 56px; left: 12px; right: 12px; z-index: 30; display: none; padding: 8px 12px; border-radius: 10px; background: rgba(20,26,34,.94); border: 1px solid #2b3442; }

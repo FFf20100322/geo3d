@@ -328,13 +328,37 @@ export function parseScene(raw: unknown): Scene {
     if (v.points !== undefined) {
       for (const p of arr(v.points, `第 ${i + 1} 个 variants 的 points`)) {
         if (!isObj(p)) throw new SceneError(`第 ${i + 1} 个 variants 的点不是对象`)
-        // 与主场景走同一条解析：直接复用不太好拆，这里只做最小的合法性检查
         const name = toDisplayName(str(p.name, 'variants 里的点 name'))
         const kind = str(p.kind, 'variants 里的点 kind')
-        vp.push({ ...(p as object), name, kind } as PointDef)
+        // **种类必须在白名单里。** 原来这一句没有，是审计实测出来的洞：
+        // 变体里写个不存在的 kind，求解器那边的 switch 不认、又正好没有 default，
+        // 于是一个残差都不产生 —— 图看着正常、条件是假的，谁都发现不了。
+        if (!(POINT_KINDS as readonly string[]).includes(kind)) {
+          throw new SceneError(`第 ${i + 1} 个 variants 里的点 ${name} 种类不认识：${kind}`)
+        }
+        // **引用的点名要跟主场景一样归一化。** 原来只归一化了 name，
+        // of/from/face 里的名字原样拷 —— 写 `of:['A1','B1']` 会带着 'A1' 进求解器，
+        // 求解器只认 'A₁'，于是抛一句没有上下文的「引用了不存在的点 A1」。
+        const fix = (x: unknown): string => toDisplayName(str(x, 'variants 里的点名称'))
+        const fixed: Record<string, unknown> = { ...(p as Record<string, unknown>), name, kind }
+        for (const key of ['of', 'face'] as const) {
+          if (Array.isArray(fixed[key])) fixed[key] = (fixed[key] as unknown[]).map(fix)
+        }
+        if (typeof fixed.from === 'string') fixed.from = fix(fixed.from)
+        vp.push(fixed as unknown as PointDef)
       }
     }
     const vc = v.constraints === undefined ? [] : arr(v.constraints, `第 ${i + 1} 个 variants 的 constraints`)
+    // **约束种类也要在名单里。** 这是审计抓到的同一个洞的另一半：
+    // `as Constraint[]` 把没校验过的东西整包塞进强类型，拼错一个 kind
+    // 就等于那条条件不存在（实测：题面要 60°、实际 90°，没有任何地方报错）。
+    for (const c of vc) {
+      if (!isObj(c)) throw new SceneError(`第 ${i + 1} 个 variants 的约束不是对象`)
+      const ck = str(c.kind, 'variants 里的约束 kind')
+      if (!(CONSTRAINT_KINDS as readonly string[]).includes(ck)) {
+        throw new SceneError(`第 ${i + 1} 个 variants 里有个不认识的约束：${ck}`)
+      }
+    }
     const ve = v.edges === undefined ? [] : arr(v.edges, `第 ${i + 1} 个 variants 的 edges`)
     const vf = v.faces === undefined ? [] : arr(v.faces, `第 ${i + 1} 个 variants 的 faces`)
     variants.push({

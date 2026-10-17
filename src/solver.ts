@@ -287,6 +287,20 @@ function residualsOf(
         info.push({ desc: `${c.pts.join('')} 四点共面`, error: Math.abs(det), actual: `偏离 = ${det.toFixed(5)}` })
         break
       }
+      default: {
+        // **不认识的约束种类必须当场炸，不能静默跳过。**
+        //
+        // 踩过一次（审计实测出来的）：variants 那条路绕过了校验，把
+        // 「line_angle」这种拼错的 kind 原样塞了进来，而这个 switch 当时没有 default ——
+        // 于是一个残差都不产生，求解器报 ok=true、图看着完全正常，
+        // **而那条条件根本没生效**（实测：题面要 60°，实际 90°，没人说话）。
+        // 这正是项目最怕的那类错：图看着对，条件是假的。
+        //
+        // 加了 default 之后，`c` 在这里是 never —— 以后往 Constraint 上加种类，
+        // 忘了在这里处理的话**编译就过不去**，不用等人去发现。
+        const never: never = c
+        throw new Error(`不认识的约束种类：${JSON.stringify(never)}`)
+      }
     }
   }
   return { raw, info }
@@ -338,10 +352,28 @@ export function solve(defs: PointDef[], constraints: Constraint[], log?: (s: str
     constraints.reduce((s, c) => (c.kind === 'distance' ? s + c.value : s), 0) /
       Math.max(1, constraints.filter((c) => c.kind === 'distance').length) || 1
 
-  // 初值：模型给的坐标，没给就摆成一个不共线的缺省位置
+  // 初值：模型给的坐标，没给就摆成一个**不共线也不共面**的缺省位置。
+  //
+  // 这里踩过一个很隐蔽的坑（审计实测出来的）：原来写的是 `?? [i, 0, 0]` ——
+  // 所有点都排在 x 轴上，也就是**整图共线**。
+  // 后果不是「解不出来」，而是**解出来了、而且报 ok**：
+  // 共线位置下所有叉积型的残差（平行、线面垂直那些用 |u×w| 的）正好是 0，
+  // 求解器第 0 轮就判定「已经满足」，返回 ok=true、残差 0，
+  // 然后面校验发现「面的前三个点共线」，报给用户一句「面不对」——
+  // 真正的毛病在初值，错误信息却指向模型的 faces，升三档重试也白搭。
+  // 换成下面这组之后，前四个点天然不共面，叉积不会退化。
+  const SPREAD: Vec3[] = [
+    [0, 0, 0],
+    [1, 0, 0],
+    [0, 1, 0],
+    [0, 0, 1],
+  ]
   const x: number[] = []
   freeDefs.forEach((d, i) => {
-    const at = (d as { at?: Vec3 }).at ?? [i, 0, 0]
+    const fallback = SPREAD[i % SPREAD.length]
+    const at =
+      (d as { at?: Vec3 }).at ??
+      ([fallback[0] + Math.floor(i / SPREAD.length) * 0.37, fallback[1], fallback[2]] as Vec3)
     x.push(at[0], at[1], at[2])
   })
 
