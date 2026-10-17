@@ -1,0 +1,386 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Geo3D · 高中立体几何解题与演示</title>
+    <style>
+      :root { color-scheme: dark; }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #0f1115; color: #e6e9ef; font-family: system-ui, -apple-system, "Microsoft YaHei", sans-serif; }
+      body { font-size: 15px; line-height: 1.7; }
+
+      #app { position: fixed; inset: 0; }
+      /* 画布必须铺满容器：漏了这行，画布会退回 canvas 默认尺寸，和标签层对不上导致字母错位 */
+      #app canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+      /* 点标注层：DOM 覆盖，永远画在最上层 —— 「点标注必须常驻」就是靠这层保证的 */
+      #labels { position: fixed; inset: 0; pointer-events: none; }
+      #labels .pt { color: #fff; font-size: 15px; font-weight: 700; text-shadow: 0 0 3px #000, 0 0 6px #000, 0 1px 2px #000; }
+
+      #bar { position: fixed; top: 0; left: 0; right: 0; height: 52px; display: flex; align-items: center; gap: 4px; padding: 0 8px 0 12px; background: rgba(15,17,21,.88); backdrop-filter: blur(8px); border-bottom: 1px solid #222833; z-index: 20; }
+      #bar-title { font-weight: 650; margin-right: auto; font-size: 15px; }
+      #bar button { padding: 7px 11px; font-size: 14px; border-color: transparent; border-radius: 8px; }
+
+      .view { position: fixed; inset: 0; padding: 64px 16px 84px; overflow-y: auto; background: #0f1115; display: none; z-index: 10; }
+      .view.on { display: block; }
+      .view h2 { font-size: 19px; margin: 4px 0 6px; }
+      .muted { color: #98a2b3; font-size: 13px; }
+      .gap { height: 14px; }
+
+      button, .filebtn { font: inherit; color: #e6e9ef; background: #1a2029; border: 1px solid #2b3442; border-radius: 10px; padding: 11px 14px; cursor: pointer; }
+      button.primary, .filebtn { background: #2f6df6; border-color: #2f6df6; color: #fff; font-weight: 600; }
+      button.ghost { background: transparent; }
+      button[disabled] { opacity: .45; pointer-events: none; }
+
+      .filebtn { display: block; text-align: center; padding: 18px; font-size: 17px; }
+      textarea, input[type="password"], input[type="text"] { font: inherit; width: 100%; color: #e6e9ef; background: #141a22; border: 1px solid #2b3442; border-radius: 10px; padding: 10px 12px; resize: vertical; }
+      label { display: block; margin: 14px 0 6px; font-size: 13px; color: #98a2b3; }
+      .row { display: flex; gap: 10px; flex-wrap: wrap; }
+      .row > * { flex: 1 1 auto; }
+
+      #photo-preview img { width: 100%; border-radius: 12px; border: 1px solid #2b3442; margin-top: 14px; }
+      #photo-preview:empty { display: none; }
+
+      #pick-image { position: relative; margin-top: 12px; }
+      #pick-image img { width: 100%; display: block; border-radius: 12px; border: 1px solid #2b3442; }
+      #pick-image .box { position: absolute; border: 2px solid #2f6df6; background: rgba(47,109,246,.16); border-radius: 6px; cursor: pointer; }
+      #pick-image .box b { position: absolute; top: -1px; left: -1px; background: #2f6df6; color: #fff; font-size: 12px; padding: 0 5px; border-radius: 5px 0 5px 0; }
+      #pick-list { margin-top: 14px; display: flex; flex-direction: column; gap: 10px; }
+      #pick-list button { text-align: left; line-height: 1.5; }
+      #pick-list b { color: #7aa2ff; }
+      #pick-list span { color: #98a2b3; font-size: 13px; }
+      /* 消息行必须是全局浮层：以前它长在拍题页里面，于是建模失败时用户在文字页什么都看不到，
+         只看到进度条闪一下就没动静了，根本不知道发生了什么。
+         它不接收点击（pointer-events:none），否则会挡住下面的按钮；并且会自己消失。 */
+      /* bottom 要避开 3D 页底下那一行（#footline 在 bottom:8px，高约 16px）——
+         两个固定定位的元素原来都压在底部，提示框会把那一行**整个盖住**。
+         这是项目铁律「两个控件不能占同一位置」的一个实例。 */
+      /* 没网时的提示条。挂在最上面一行，不挡下面的操作。 */
+      /* **必须让开顶栏。** 顶栏 #bar 是 fixed top:0、高 52px；
+         提示条原先也是 top:0 且 z-index 更高 —— 断网时它会把「拍题/3D/历史/设置」
+         整个盖住，而且**没加 pointer-events:none，连点击都被它吃掉**，
+         于是断网就等于失去了全部导航（用户只会以为软件坏了）。这是铁律⑤的实例。
+         现在：挪到顶栏下面，并且不接收点击。 */
+      #offline-bar { position: fixed; top: 52px; left: 0; right: 0; z-index: 19; pointer-events: none; padding: 7px 12px; font-size: 12.5px; line-height: 1.45; color: #ffd479; background: rgba(58,44,12,.97); border-bottom: 1px solid #6b5320; }
+      #offline-bar[hidden] { display: none; }
+      #offline-bar b { color: #ffe1a3; }
+      #status { position: fixed; left: 12px; right: 12px; bottom: 34px; z-index: 40; margin: 0; padding: 10px 12px; border-radius: 10px; font-size: 13px; line-height: 1.5; background: rgba(20,26,34,.97); border: 1px solid #2b3442; box-shadow: 0 6px 20px rgba(0,0,0,.45); pointer-events: none; }
+      #status:empty { display: none; }
+      #status.err { color: #ff7b72; border-color: #5a2a2a; }
+      #status.ok { color: #4ec9a5; border-color: #24503f; }
+      #uncertain:empty { display: none; }
+      #uncertain { margin-top: 10px; padding: 10px 12px; border-radius: 10px; background: #2a2213; border: 1px solid #5a4a1d; font-size: 13px; }
+
+      #points:empty { display: none; }
+      #points { margin-bottom: 8px; padding: 10px 12px; border-radius: 10px; background: #16202e; border: 1px solid #2b3442; }
+      #points .pt-head { font-size: 13px; color: #98a2b3; }
+      #points .pt-list { font-size: 17px; letter-spacing: .06em; margin: 6px 0; word-break: break-all; }
+      #points .pt-warn { font-size: 12px; color: #d8a657; }
+      #balance { margin-top: 12px; white-space: pre-wrap; }
+      #top-balance { font-size: 12px; color: #7dd3a0; background: rgba(46,204,113,.12); border: 1px solid rgba(46,204,113,.3); border-radius: 999px; padding: 3px 9px; margin-right: 4px; white-space: nowrap; }
+      /* 窄屏上把标题让出去，保证余额与四个入口都放得下 */
+      @media (max-width: 400px) { #bar-title { display: none; } }
+      /* 页面最下面一行：展开/收起 + 操作提示。**淡灰文字，不做成框** ——
+         用户要的是「一起用淡灰色在页面最下方表示」，不是两个按钮。
+         收起之后全页只剩这一行。 */
+      #labels .axis-label { color: #7fb0ff; font-size: 14px; font-weight: 700; font-style: italic; text-shadow: 0 0 3px #000, 0 0 6px #000; }
+      #footline { position: fixed; left: 12px; right: 12px; bottom: 8px; z-index: 15; display: none; align-items: center; gap: 10px; font-size: 12px; color: #8b95a5; }
+      #footline #foot-fold { flex: none; padding: 0; border: 0; background: none; color: #8b95a5; font-size: 12px; text-decoration: underline; text-underline-offset: 3px; }
+      #footline #hint { flex: 1 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+      #scene-caption { position: fixed; left: 12px; right: 12px; bottom: 32px; z-index: 15; display: none; padding: 8px 12px; border-radius: 10px; background: rgba(20,26,34,.86); border: 1px solid #2b3442; font-size: 13px; color: #cbd5e1; cursor: pointer; }
+      #labels .pt.aux { color: #7dd3a0; }
+
+      #player { position: fixed; left: 12px; right: 12px; bottom: 76px; z-index: 16; display: none; }
+      #player .pl-row { display: flex; gap: 6px; align-items: center; padding: 6px; border-radius: 10px; background: rgba(20,26,34,.9); border: 1px solid #2b3442; }
+      /* 收起状态：**整块播放器与题面都藏起来**，页面最下面只留那行淡灰文字。
+         用户要的是「收起以后只有展开一个按钮，它上面和旁边的全部隐藏」。 */
+      #player.folded, body.folded #player { display: none !important; }
+      body.folded #scene-caption { display: none !important; }
+      .pl-bottom { display: flex; align-items: flex-start; gap: 8px; margin-top: 6px; }
+      .pl-bottom #pl-text { flex: 1 1 auto; min-width: 0; margin-top: 0; }
+      /* 步骤说明压缩过：内边距与行距都收小，最多两行、多出来的省略。
+         它原来是按「一段说明」排的，占掉小半个屏幕 —— 但那只是当前这一步的一句话。 */
+      /* 步骤说明压缩过：内边距与行距收小，最多两行、多出来的省略。
+         它原来按「一段说明」排，占掉小半个屏幕 —— 但那只是当前这一步的一句话。 */
+      #pl-text { margin: 0; padding: 5px 9px; border-radius: 10px; background: rgba(20,26,34,.86); border: 1px solid #2b3442; font-size: 12.5px; color: #cbd5e1; cursor: pointer; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+      button.small { padding: 6px 9px; font-size: 13px; border-radius: 8px; }
+      #pl-label { flex: 1; text-align: center; font-size: 12px; color: #98a2b3; font-variant-numeric: tabular-nums; }
+      #pl-range { width: 100%; margin: 8px 0 0; accent-color: #2f6df6; }
+      #labels .pt.hl { color: #ffd166; font-size: 19px; }
+      #labels .pt.mov { color: #ffb84d; font-size: 18px; }
+      #labels .angle-label { color: #6ee7ff; font-size: 13px; font-weight: 600; white-space: nowrap; text-shadow: 0 0 3px #000, 0 0 6px #000, 0 1px 2px #000; }
+      /* 问 / 解法：两组各自收成一个贴左侧的小标签，点开向右铺开。
+         只允许开一组；开着一组时最上面那条工具条会暂时藏起来（见 main.ts），
+         免得三排按钮挤在一起。 */
+      #qsel { position: fixed; top: 64px; left: 12px; right: 12px; z-index: 17; display: none; flex-direction: column; gap: 8px; align-items: flex-start; }
+      #qsel .qgroup { display: flex; align-items: flex-start; gap: 8px; max-width: 100%; flex-wrap: wrap; }
+      #qsel .qhead { flex: none; padding: 5px 11px; font-size: 12.5px; border-radius: 8px; border: 1px solid #3b4757; background: rgba(24,31,41,.95); color: #cbd5e1; font-weight: 600; }
+      #qsel .qhead.on { background: #2f6fed; border-color: #2f6fed; color: #fff; }
+      #qsel .qopts { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+      #qsel .qopts button { padding: 5px 10px; font-size: 12.5px; border-radius: 8px; border: 1px solid #2b3442; background: rgba(20,26,34,.9); color: #cbd5e1; }
+      #qsel .qopts button.on { background: #ffd166; border-color: #ffd166; color: #1a1205; font-weight: 600; }
+
+      #dyn-panel, #elem-panel { position: fixed; top: 104px; left: 12px; right: 12px; z-index: 16; display: none; flex-direction: column; padding: 10px 12px; border-radius: 10px; background: rgba(20,26,34,.94); border: 1px solid #2b3442; }
+      /* 内容自己滚，收起按钮钉在面板底部，不会被滚出去 */
+      #dyn-body { overflow-y: auto; max-height: 48vh; }
+      #elem-body .sec { margin: 10px 0 6px; font-size: 12px; color: #98a2b3; }
+      #elem-body .sec:first-child { margin-top: 0; }
+      #elem-body .items { display: flex; flex-wrap: wrap; gap: 6px; }
+      #elem-body .item { display: flex; align-items: center; gap: 6px; padding: 5px 9px; border: 1px solid #2b3442; border-radius: 8px; background: #141a22; font-size: 14px; cursor: pointer; }
+      /* 清单点中的那一项与图上的高亮是同一件事，颜色也用同一个（#ffd166） */
+      #elem-body .item.on { border-color: #ffd166; color: #ffd166; }
+      #elem-body .item.mov { color: #ffb84d; }
+      /* 被关掉的面在清单上必须看得出来，否则就成了「清单说开着、图上是关的」 */
+      #elem-body .item.off { color: #667085; }
+      #elem-body .item input { width: 20px; height: 20px; flex: none; margin: 0; accent-color: #2f6df6; }
+      #dyn-collapse, #elem-collapse { flex: none; margin-top: 10px; width: 100%; padding: 8px; font-size: 13px; }
+      /* 顶栏右侧的模式切换与各面板入口。按钮上的字数会变（例如「标注：全部(24) · 2项存疑」），
+         所以允许换行、靠右对齐，宁可换行也不能让按钮被挤出屏幕左边点不到。 */
+      #scene-tools { position: fixed; top: 60px; right: 12px; max-width: calc(100% - 24px); z-index: 17; display: none; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+      #scene-tools button { padding: 6px 10px; font-size: 13px; }
+      /* 「不用拍照」的两条路：各成一块、各带标题，中间留开距离 */
+      .pick-sec { margin-top: 22px; padding-top: 16px; border-top: 1px solid #222833; }
+      .pick-sec.pick-first { margin-top: 0; padding-top: 0; border-top: 0; }
+      .pick-sec h3 { margin: 0 0 4px; font-size: 15px; font-weight: 600; color: #e5e7eb; }
+      .pick-sec .muted { margin: 0 0 10px; }
+      .pick-list { display: flex; flex-direction: column; gap: 8px; }
+      .pick-item { display: block; width: 100%; text-align: left; padding: 11px 13px; border-radius: 10px; border: 1px solid #2b3442; background: #161b22; color: #cbd5e1; cursor: pointer; }
+      .pick-item:hover { border-color: #3b82f6; }
+      .pick-item .t { display: block; font-size: 14px; line-height: 1.5; color: #e5e7eb; }
+      .pick-item .d { display: block; margin-top: 3px; font-size: 12px; color: #98a2b3; }
+      /* 行尾的动作按钮（导出这类）。行本身改成了 div，所以按钮放得进去 —— 
+         <button> 里不能嵌套 <button>，那样里面的按钮会被浏览器甩出去、根本不显示。 */
+      .pick-item { position: relative; }
+      .pick-act { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); padding: 10px 14px; font-size: 13px; border-radius: 8px; border: 1px solid #2b3442; background: #1c2430; color: #cbd5e1; }
+      .pick-act:hover { border-color: #3b82f6; color: #fff; }
+      /* 给按钮让出位置，免得长标题压在它下面 */
+      .pick-item { padding-right: 86px; }
+      .pick-empty { font-size: 13px; color: #6b7280; }
+      /* 后台任务进度条。建模与解题都是多阶段的长任务，没有它就像卡死了。 */
+      #progress { position: fixed; top: 56px; left: 12px; right: 12px; z-index: 30; display: none; padding: 8px 12px; border-radius: 10px; background: rgba(20,26,34,.94); border: 1px solid #2b3442; }
+      #progress-track { height: 6px; border-radius: 3px; background: #222833; overflow: hidden; }
+      #progress-fill { height: 100%; width: 0; border-radius: 3px; background: linear-gradient(90deg,#3b82f6,#60a5fa); transition: width .25s ease; }
+      #progress-text { flex: 1 1 auto; margin: 0; font-size: 12px; color: #98a2b3; }
+      #progress-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+      #progress-cancel { flex: none; padding: 3px 10px; font-size: 12px; }
+      #dyn-panel .dyn-row + .dyn-row { margin-top: 12px; padding-top: 10px; border-top: 1px solid #222833; }
+      #dyn-panel .dyn-top { display: flex; align-items: center; gap: 8px; }
+      #dyn-panel label { flex: 1 1 auto; margin: 0; font-size: 13px; color: #cbd5e1; }
+      #dyn-panel input[type="number"] { flex: none; width: 96px; padding: 5px 8px; font-size: 14px; text-align: right; font-variant-numeric: tabular-nums; }
+      #dyn-panel input[type="range"] { width: 100%; margin: 8px 0 0; accent-color: #f0a020; }
+      #dyn-panel .dyn-read { margin-top: 4px; font-size: 12px; color: #98a2b3; font-variant-numeric: tabular-nums; }
+      /* 元素清单：点与棱点一下在图上高亮，面用勾选框控制显隐 */
+      #dyn-panel .el-sec + .el-sec { margin-top: 12px; padding-top: 10px; border-top: 1px solid #222833; }
+      #dyn-panel .el-title { font-size: 12px; color: #98a2b3; margin-bottom: 6px; }
+      #dyn-panel .el-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+      #dyn-panel .el-chip { flex: none; padding: 4px 9px; font-size: 13px; line-height: 1.5; border-radius: 7px; border: 1px solid #2b3442; background: #161b22; color: #cbd5e1; cursor: pointer; }
+      #dyn-panel .el-chip.mov { color: #ffb84d; border-color: #4a3a1e; }
+      #dyn-panel .el-chip.on { background: #ffd166; border-color: #ffd166; color: #1a1205; font-weight: 600; }
+      #dyn-panel .el-chip.face { display: inline-flex; align-items: center; gap: 5px; }
+      #dyn-panel .el-chip.face input { width: auto; margin: 0; accent-color: #f0a020; }
+      /* 拖动滑杆时进入专注模式：只留下正在拖的那一条，其余省略。
+         面板变矮后 3D 区域会自动变大，这样一边拖一边能看清模型。 */
+      #dyn-panel.focusing { background: rgba(20,26,34,.72); padding: 8px 12px; }
+      #dyn-panel.focusing .dyn-row { display: none; }
+      #dyn-panel.focusing .dyn-row.dyn-focus { display: block; margin: 0; padding: 0; border: 0; }
+      #dyn-panel.focusing .dyn-row.dyn-focus .dyn-top { display: none; }
+      #dyn-panel.focusing #dyn-collapse { display: none; }
+      #dyn-panel.focusing input[type="range"] { margin: 4px 0 0; height: 28px; }
+
+      #history-list { margin-top: 12px; display: flex; flex-direction: column; gap: 10px; }
+      #history-list:empty + .gap { display: none; }
+      .hitem { display: flex; gap: 10px; align-items: center; padding: 8px; border: 1px solid #2b3442; border-radius: 12px; background: #141a22; cursor: pointer; }
+      .hitem img, .hitem .hph { width: 56px; height: 56px; flex: none; border-radius: 8px; object-fit: cover; background: #0f1115; }
+      .hitem .hph { display: flex; align-items: center; justify-content: center; font-size: 12px; color: #7aa2ff; border: 1px solid #2b3442; }
+      .hbody { flex: 1 1 auto; min-width: 0; }
+      .htitle { font-size: 14px; line-height: 1.45; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+      .hmeta { font-size: 12px; color: #98a2b3; margin-top: 2px; }
+      .hdel { flex: none; padding: 6px 10px; font-size: 13px; }
+
+      #solution-answers:empty { display: none; }
+      #solution-answers { margin: 10px 0 4px; padding: 12px; border-radius: 12px; background: #16202e; border: 1px solid #2b3442; }
+      #solution-answers .ans { font-size: 15px; line-height: 1.9; }
+      #solution-answers b { color: #7dd3a0; }
+      #solution-steps { margin-top: 12px; display: flex; flex-direction: column; gap: 12px; }
+      .step { padding: 12px; border-radius: 12px; background: #141a22; border: 1px solid #2b3442; }
+      .step .st-head { display: flex; gap: 8px; align-items: baseline; font-weight: 650; }
+      .step .st-no { flex: none; color: #7aa2ff; font-variant-numeric: tabular-nums; }
+      .step .st-text { margin-top: 6px; line-height: 1.75; }
+      .step .st-why { margin-top: 6px; font-size: 13px; color: #d8a657; }
+      .step .st-draw { margin-top: 6px; font-size: 13px; color: #98a2b3; }
+    </style>
+    <script type="module" crossorigin src="/geo3d/assets/index-A7fW9BTD.js"></script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <div id="labels"></div>
+
+    <header id="bar">
+      <span id="bar-title">立体几何 3D</span>
+      <span id="top-balance" title="DeepSeek 账户余额">余额 --</span>
+      <button id="nav-photo" class="ghost">拍题</button>
+      <button id="nav-3d" class="ghost">3D</button>
+      <button id="nav-history" class="ghost">历史</button>
+      <button id="nav-settings" class="ghost">设置</button>
+    </header>
+
+    <section id="view-photo" class="view on">
+      <h2>拍下题目</h2>
+      <p class="muted">把整页拍进来就行，周围有别的题也没关系——系统会自己找出照片里的每一道题，再让你点选。尽量正对镜头、光线均匀。只支持印刷体。</p>
+      <div class="gap"></div>
+      <div class="row">
+        <label class="filebtn" for="file-camera">拍照</label>
+        <label class="filebtn" for="file-album">从相册选</label>
+      </div>
+      <input id="file-camera" type="file" accept="image/*" capture="environment" hidden />
+      <input id="file-album" type="file" accept="image/*" hidden />
+
+      <!-- 两条「不用拍照」的路子各是一个按钮，点了才进去。
+           列表不摆在拍题页上：那样页面会被越撑越长，以后导入的题目一多就没法看了。 -->
+      <div class="pick-sec">
+        <h3>不用拍照</h3>
+        <button id="btn-saved" class="ghost">载入已保存的题目</button>
+        <button id="btn-type" class="ghost">直接输入题目文字</button>
+      </div>
+
+      <div id="photo-preview"></div>
+    </section>
+
+    <section id="view-saved" class="view">
+      <h2>载入已保存的题目</h2>
+      <p class="muted">点一条就打开。每一类都完整保留着原题图片、识别出的题面、解题过程和能转动的 3D 模型。</p>
+      <div class="gap"></div>
+
+      <div class="pick-sec pick-first">
+        <h3>历史记录</h3>
+        <p class="muted">自己拍过、或直接打字建过的题，自动存着，最多留 10 条。</p>
+        <div id="saved-history" class="pick-list"></div>
+      </div>
+
+      <div class="pick-sec">
+        <h3>内部存储</h3>
+        <p class="muted">从别的手机或电脑导入的题目放在这里。</p>
+        <div id="saved-imported" class="pick-list"></div>
+      </div>
+
+      <div class="gap"></div>
+      <button id="saved-back" class="ghost">返回</button>
+    </section>
+
+    <section id="view-pick" class="view">
+      <h2>选一道题</h2>
+      <p class="muted">这是照片里找到的题目。点框或点下面的列表都行。框只是提示，识别时会看整张照片，所以不会漏掉散落的已知条件。</p>
+      <div id="pick-image"></div>
+      <div id="pick-list"></div>
+      <div class="gap"></div>
+      <button id="btn-repick" class="ghost">重拍 / 换一张</button>
+    </section>
+
+    <section id="view-text" class="view">
+      <h2>识别结果，请核对</h2>
+      <p class="muted">有错就直接改。模型没认出来的条件，在下面单独补一行。</p>
+      <label for="problem-text">题目文字</label>
+      <div id="points"></div>
+      <textarea id="problem-text" rows="10"></textarea>
+      <label for="extra">补充或修改的条件（可以留空）</label>
+      <textarea id="extra" rows="3" placeholder="例如：AB=2，E 是 BC 的中点"></textarea>
+      <div id="uncertain"></div>
+      <div class="gap"></div>
+      <div class="row">
+        <button id="btn-regen" class="ghost">重拍 / 重识别</button>
+        <button id="btn-shape" class="ghost">只看图形</button>
+        <button id="btn-generate">开始解题</button>
+      </div>
+      <p class="muted">认得不对就先改上面的文字，改完再点开始解题。模型漏掉的条件写在上面那个补充框里。改完不用手动保存，会自动存进历史。</p>
+    </section>
+
+    <section id="view-history" class="view">
+      <h2>以前拍过的题</h2>
+      <p class="muted">点一条就能重新打开。有 3D 的直接进 3D 页，只有文字的回到文字页。</p>
+      <div id="history-list"></div>
+      <div class="gap"></div>
+      <button id="btn-import-g3d" class="ghost">导入 .g3d 题目文件</button>
+      <button id="btn-clear-history" class="ghost">清空全部</button>
+    </section>
+
+    <section id="view-solution" class="view">
+      <h2>解题过程</h2>
+      <div id="solution-answers"></div>
+      <div id="solution-steps"></div>
+      <div class="gap"></div>
+      <div class="row">
+        <button id="btn-solution-3d">看带辅助线的图形</button>
+        <button id="btn-solution-back" class="ghost">返回文字</button>
+      </div>
+    </section>
+
+    <section id="view-settings" class="view">
+      <h2>设置</h2>
+      <label for="api-key">DeepSeek API Key</label>
+      <input id="api-key" type="password" placeholder="sk-..." autocomplete="off" />
+      <label style="display:flex;align-items:center;gap:8px;margin-top:10px">
+        <input id="show-key" type="checkbox" style="width:auto;margin:0" />
+        <span>显示 Key（长按粘贴容易复制错，可以打开核对一下）</span>
+      </label>
+      <p class="muted">Key 只保存在这台手机上，不写进代码、也不发给任何第三方。</p>
+      <div class="gap"></div>
+      <button id="btn-test" class="primary">保存并查询余额</button>
+      <p id="balance" class="muted"></p>
+      <div class="gap"></div>
+      <button id="btn-back" class="ghost">返回拍题</button>
+    </section>
+
+    <p id="status"></p>
+    <div id="progress">
+      <div id="progress-head">
+        <div id="progress-text"></div>
+        <button id="progress-cancel" class="ghost">取消</button>
+      </div>
+      <div id="progress-track"><div id="progress-fill"></div></div>
+    </div>
+    <div id="scene-tools">
+      <button id="face-toggle" class="ghost">面</button>
+      <!-- **这个按钮不能也叫「调节」。**
+           它上面的 mode-toggle 叫「调节」（进调节模式），这里再叫「调节」就撞了 ——
+           两个同名按钮做的事不一样，用户会点错，**我自己验收时就点错了两次**
+           （想开元素清单，点的一直是上面那个，然后以为面板坏了）。
+           它的作用是展开动点滑杆与元素清单，叫「元素清单」最直白。 -->
+      <button id="dyn-toggle" class="ghost">元素清单</button>
+      <button id="annot-toggle" class="ghost">标注</button>
+      <button id="unit-toggle" class="ghost" title="角度显示单位（角度制 / 弧度制）">°</button>
+      <button id="mode-toggle" class="ghost">调节</button>
+    </div>
+    <div id="dyn-panel">
+      <div id="dyn-body"></div>
+      <button id="dyn-collapse" class="ghost">▲ 收起</button>
+    </div>
+    <div id="player">
+      <div class="pl-row">
+        <button id="pl-prev" class="ghost small">◀ 上一步</button>
+        <button id="pl-play" class="ghost small">▶ 播放</button>
+        <button id="pl-next" class="ghost small">下一步 ▶</button>
+        <span id="pl-label">全部</span>
+      </div>
+      <input id="pl-range" type="range" min="-1" max="0" step="1" value="-1" />
+      <!-- 步骤说明。收起按钮不在这里 —— 它在页面最下面那一行淡灰文字里。 -->
+      <div class="pl-bottom">
+        <div id="pl-text"></div>
+      </div>
+    </div>
+    <div id="scene-caption"></div>
+    <!-- 页面最下面一行：展开/收起 + 操作提示，都用淡灰文字，不做成框。
+         收起之后这一行是唯一留下的东西，上面和旁边的全部隐藏。 -->
+    <div id="footline">
+      <button id="foot-fold" type="button">▲ 收起</button>
+      <span id="hint">单指拖动旋转 · 双指缩放平移</span>
+    </div>
+    <!-- 问与解法的切换按钮。只有「一问多解」的题才会出现内容，别的题这里是空的。 -->
+    <div id="qsel"></div>
+    <!-- 离线提示条：没网时挂在最上面，说清「哪些能用、哪些要等有网」。
+         做这个不是为了好看 —— 用户没网时最怕的是「是不是坏了」，
+         一句话说清楚比什么错误提示都管用。 -->
+    <div id="offline-bar" hidden>
+      现在没有网络：<b>拍照识别、解题、查余额</b>要等有网；已经存过的题目照样能看、能转、能导出。
+    </div>
+  </body>
+</html>
