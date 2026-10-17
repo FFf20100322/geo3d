@@ -8,3 +8,9 @@ dist/
 
 # 自签证书与私钥：不进仓库（每台机器各生成各的，私钥也不该提交）
 .certs/
+
+# 构建产物与打包输出：不进仓库（里面有几百 MB 的 electron）
+release/
+out/
+dist-exe/
+

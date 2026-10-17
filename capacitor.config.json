@@ -1,0 +1,13 @@
+{
+  "appId": "com.geo3d.app",
+  "appName": "Geo3D",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https"
+  },
+  "android": {
+    "allowMixedContent": false,
+    "minSdkVersion": 34,
+    "targetSdkVersion": 34
+  }
+}

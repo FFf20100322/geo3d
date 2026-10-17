@@ -2,11 +2,21 @@
   "appId": "com.geo3d.desktop",
   "productName": "Geo3D",
   "directories": {
-    "output": "release"
+    "output": "F:/g3d-out"
   },
-  "files": ["electron/**", "dist/**"],
+  "files": [
+    "electron/**",
+    "dist/**"
+  ],
   "win": {
-    "target": [{ "target": "nsis", "arch": ["x64"] }],
+    "target": [
+      {
+        "target": "nsis",
+        "arch": [
+          "x64"
+        ]
+      }
+    ],
     "artifactName": "Geo3D-${version}.${ext}"
   },
   "nsis": {

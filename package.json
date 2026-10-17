@@ -1,7 +1,7 @@
 {
   "name": "geo3d",
   "private": true,
-  "version": "1.0.0-my.23",
+  "version": "1.0.0-my.24",
   "type": "module",
   "description": "Geo3D —— 高中立体几何的 3D 解题与演示：拍照或直接输入题目，本地算出立体图形并逐条回验，给出分步解答与可交互 3D 模型（改进版分支 my-version）",
   "scripts": {
@@ -20,6 +20,8 @@
   },
   "devDependencies": {
     "@types/three": "^0.180.0",
+    "electron": "^44.7.2",
+    "electron-builder": "^26.15.3",
     "typescript": "^5.9.3",
     "vite": "^6.4.4"
   },
