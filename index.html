@@ -339,7 +339,12 @@
     </div>
     <div id="scene-tools">
       <button id="face-toggle" class="ghost">面</button>
-      <button id="dyn-toggle" class="ghost">调节</button>
+      <!-- **这个按钮不能也叫「调节」。**
+           它上面的 mode-toggle 叫「调节」（进调节模式），这里再叫「调节」就撞了 ——
+           两个同名按钮做的事不一样，用户会点错，**我自己验收时就点错了两次**
+           （想开元素清单，点的一直是上面那个，然后以为面板坏了）。
+           它的作用是展开动点滑杆与元素清单，叫「元素清单」最直白。 -->
+      <button id="dyn-toggle" class="ghost">元素清单</button>
       <button id="annot-toggle" class="ghost">标注</button>
       <button id="unit-toggle" class="ghost" title="角度显示单位（角度制 / 弧度制）">°</button>
       <button id="mode-toggle" class="ghost">调节</button>
