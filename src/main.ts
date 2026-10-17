@@ -1582,6 +1582,13 @@ async function saveBlob(blob: Blob, name: string): Promise<void> {
  * 一张静止的图说明不了解题是怎么走的。
  */
 function exportVideo(): void {
+  // 先确认真的有解答。导出那一组现在只要有图形就显示，而「只看图形」进来的页面
+  // 是没有解答的 —— 那时点录视频会在下面读 currentSolution 时炸掉
+  // （一行 TypeError，用户只看到「没反应」）。与其崩，不如说清楚。
+  if (!currentSolution || !viewSolution(currentSolution).steps.length) {
+    say('这道题还没有解题过程，没东西可录。先点「开始解题」，或者改用「存图」。', 'err')
+    return
+  }
   const pick = pickVideoMime((m) => typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(m))
   if (!pick) {
     say('这个浏览器不支持录制视频，换成「存图」吧。', 'err')
@@ -1799,9 +1806,8 @@ function setupOffline(): void {
 
 setupOffline()
 
-// 存图 / 录视频：把当前画面与解题动画导出
-$('btn-export-png').onclick = () => exportPng()
-$('btn-export-video').onclick = () => exportVideo()
+// 存图 / 录视频改到了「问」「解法」下面的那一组收缩栏里（用户要求），
+// 所以这里不再单独接线 —— 那两个按钮已经不在工具条上了。
 
 /**
  * 建图。这是整条链路的总闸门：
@@ -2203,7 +2209,8 @@ function viewSolution(sol: Solution): Solution {
  *   不然三排按钮挤在一起谁也看不清；
  * - **选完自动收回去**。
  */
-let openGroup: '' | 'q' | 'via' = ''
+// 同时只开一组。'out' 是「导出」那一组（存图 / 录视频）
+let openGroup: '' | 'q' | 'via' | 'out' = ''
 
 function renderQSel(): void {
   const box = $('qsel')
@@ -2211,7 +2218,8 @@ function renderQSel(): void {
   const sol = currentSolution
   const qs = sol ? [...new Set(sol.steps.map((s) => s.q).filter((x): x is string => !!x))].sort() : []
   const vias = sol ? [...new Set(sol.steps.map((s) => s.via).filter((x): x is string => !!x))] : []
-  if (!qs.length && !vias.length) {
+  // 有图形就显示（导出那一组只要有图形就有意义，不要求已经有解答）
+  if (!qs.length && !vias.length && !currentScene) {
     box.style.display = 'none'
     openGroup = ''
     return
@@ -2223,9 +2231,15 @@ function renderQSel(): void {
    * 选完自动收起：所以每个选项点完都先把 openGroup 清掉再重画。
    */
   const group = (
-    key: 'q' | 'via',
+    key: 'q' | 'via' | 'out',
     title: string,
     options: { text: string; on: boolean; pick: () => void }[],
+    /**
+     * 动作项（存图 / 录视频）与选择项（问 / 解法）不一样：
+     * 选择项点完要重置播放状态（换了问或解法，步骤得从头播）；
+     * **动作项点完绝不能重置** —— 录视频正在播动画，重置一下就把它打断了。
+     */
+    actionOnly = false,
   ) => {
     const g = document.createElement('div')
     g.className = 'qgroup'
@@ -2250,7 +2264,8 @@ function renderQSel(): void {
         b.onclick = () => {
           o.pick()
           openGroup = '' // 选完自动收回去
-          afterPick()
+          if (actionOnly) renderQSel() // 动作项只重画一下标签，不碰播放状态
+          else afterPick()
         }
         opts.appendChild(b)
       }
@@ -2273,12 +2288,30 @@ function renderQSel(): void {
   if (vias.length) {
     // **不给「不分方法」这个选项。**
     // 用户的要求：真实题目里系统自己挑最简洁的那一种，用户想换再手动选 ——
-    // 「不分方法」这个中间态没有意义，留着只会让人以为那也是一种解法。
+    // 「不分方法」这个中间态没有意义，留着只会让人以为那也是一种方法。
     // 还没手动选时，标签显示当前解答实际用的那一种。
     const current = viaPick || vias[0]
     group('via', `解法：${current}`, [
       ...vias.map((v) => ({ text: v, on: current === v, pick: () => { viaPick = v } })),
     ])
+  }
+
+  // 第三组：存图 / 录视频。
+  //
+  // 用户要求把它从上面那条工具条挪下来，做成**左侧可拉开的收缩栏**，
+  // 位置在「问」「解法」下面 —— 理由很实在：那条工具条上放的是**看图形时常用的开关**
+  // （面 / 标注 / 调节），而存图录视频是**偶尔用一次**的，混在一起会把常用的挤走。
+  // 最上面那一条保持原样不动。
+  if (currentScene) {
+    group(
+      'out',
+      '导出',
+      [
+        { text: '存图（带题面）', on: false, pick: () => exportPng() },
+        { text: '录视频（解题动画）', on: false, pick: () => exportVideo() },
+      ],
+      true,
+    )
   }
 
   // 开着一组时把最上面那条工具条藏起来；收起来再显示。
