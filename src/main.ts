@@ -1878,10 +1878,19 @@ function exportVideo(): void {
       window.setTimeout(() => rec.stop(), 400)
       return
     }
-    setStep(i)
-    i++
+    try {
+      setStep(i)
+      i++
     // 进度写出来：几十步要录一分钟上下，不写进度就分不清在录还是卡死
     say(`正在录制：第 ${i} / ${total} 步…`)
+    } catch (e) {
+      // 单步出错不能把整条链断掉：原来一旦 setStep 抛异常，后面的 setTimeout 就再也不排，
+      // 进度停在「第 2 / 4 步」一动不动、错误还被吞掉（我一开始误判成「它只是慢」）。
+      alive = false
+      say(`录制中断在第 ${i + 1} 步：${message(e)}`, 'err')
+      window.setTimeout(() => rec.stop(), 400)
+      return
+    }
     window.setTimeout(nextStep, HOLD_MS)
   }
   nextStep()
