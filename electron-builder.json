@@ -1,0 +1,18 @@
+{
+  "appId": "com.geo3d.desktop",
+  "productName": "Geo3D",
+  "directories": {
+    "output": "release"
+  },
+  "files": ["electron/**", "dist/**"],
+  "win": {
+    "target": [{ "target": "nsis", "arch": ["x64"] }],
+    "artifactName": "Geo3D-${version}.${ext}"
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true,
+    "createDesktopShortcut": true,
+    "shortcutName": "Geo3D"
+  }
+}
