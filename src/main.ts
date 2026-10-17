@@ -1709,7 +1709,7 @@ function exportVideo(): void {
     requestAnimationFrame(tick)
   }
 
-  say('开始录制：正在从第一步播到最后一步…')
+  say(`开始录制：共 ${viewSolution(currentSolution!).steps.length} 步，一步 0.9 秒…`)
   rec.start()
   alive = true
   requestAnimationFrame(tick)
@@ -1726,6 +1726,8 @@ function exportVideo(): void {
     }
     setStep(i)
     i++
+    // 进度写出来：几十步要录一分钟上下，不写进度就分不清在录还是卡死
+    say(`正在录制：第 ${i} / ${total} 步…`)
     window.setTimeout(nextStep, HOLD_MS)
   }
   nextStep()
