@@ -14,3 +14,11 @@ release/
 out/
 dist-exe/
 
+
+# Capacitor 生成的 Android 工程与产物：源码可留，但 build 目录几百 MB 不能进仓库
+android/app/build/
+android/build/
+android/.gradle/
+android/local.properties
+android/app/src/main/assets/public/
+
