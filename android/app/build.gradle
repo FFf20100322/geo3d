@@ -1,4 +1,4 @@
-﻿apply plugin: 'com.android.application'
+apply plugin: 'com.android.application'
 
 android {
     namespace = "com.geo3d.app"
@@ -16,10 +16,23 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    // **signingConfigs 必须写在 buildTypes 前面。**
+    // Gradle 是顺序求值的：buildTypes 里引用 signingConfigs.release 时，
+    // 它得已经被声明过 —— 写在后面会报 "Could not find method signingConfigs"。
+    signingConfigs {
+        release {
+            storeFile file('../geo3d-release.keystore')
+            storePassword 'geo3d2026'
+            keyAlias 'geo3d'
+            keyPassword 'geo3d2026'
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            // 正式签名的安装包。debug 包也能装，但长期使用与覆盖升级上会有麻烦。
+            signingConfig signingConfigs.release
         }
     }
 }
