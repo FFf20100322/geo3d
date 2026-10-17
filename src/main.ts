@@ -1366,18 +1366,18 @@ function importedItems(): { title: string; desc: string; run: () => void }[] {
     },
     {
       // 【临时测试】用完就删（连 temptest.ts 一起）
-      title: '【临时测试】T1 曲面立体',
+      title: '曲面立体：球、椭球、圆柱、圆锥、圆台',
       desc: '球、椭球、圆柱、圆锥、圆台各一个。看线框画得对不对、位置对不对。',
       run: () => loadBuiltinDemo('t1'),
     },
     {
       // 【临时测试】用完就删
-      title: '【临时测试】T2 每问独有的条件',
+      title: '每问独有条件：不串问',
       desc: '三棱锥 R-EFG。看第（1）问的 L 能拖动、第（2）问的 L 被钉在中点。',
       run: () => loadBuiltinDemo('t2'),
     },
     {
-      title: '翻折：平行四边形沿对角线折起',
+      title: '翻折：沿 BC 折起（绕棱旋转的动点）',
       desc: '内置示例：不耗接口、秒开。D₂ 是绕棱 BC 旋转的点 —— 拖它，它会沿一段圆弧滑动，图形跟着折起来。',
       run: () => loadBuiltinDemo('fold'),
     },
