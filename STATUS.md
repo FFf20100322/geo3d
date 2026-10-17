@@ -116,7 +116,7 @@ src/
 
 ## 自检
 
-`pnpm check` 会依次跑全部十一项，任何一项失败就非零退出：
+`pnpm check` 会依次跑全部15 项 node 自检 + tsc，任何一项失败就非零退出：
 
 geo / solver / text / scene / history / solution / demo / drag / symbolic / angle / tsc
 
@@ -134,7 +134,7 @@ geo / solver / text / scene / history / solution / demo / drag / symbolic / angl
 **每轮都要做完整套**（用户要求每轮都推送，不攒着）：
 
 1. 同步本文件的进度
-2. `pnpm check` 十三项全绿（不全绿不算完成）
+2. `pnpm check` 15 项 node 自检 + tsc全绿（不全绿不算完成）
 3. 给 `CHANGELOG.md` 加一节；按版本规则走号（加功能走中间位、修错走末尾位、能装到手机上用变 1.x）
 4. 同步三处描述：`README.md`、`功能与特点.md`、GitHub 仓库简介（`gh repo edit --description`）
 5. `git commit` 后 `git push`，并推送版本标签
