@@ -5,10 +5,12 @@ import {
   FULL_EXPECT,
   FULL_SCENE,
   FULL_SOLUTION,
+  FOLD_SCENE,
 } from './demo.ts'
 import { checkFacesPlanar, faceKey, parseScene, toRenderable } from './scene.ts'
 import { mergeSolution, parseElementName, parseSolution } from './solution.ts'
 import { isMoving, reevaluate, solve, type Vec3 } from './solver.ts'
+
 
 /**
  * 可运行的校验：把内置测试题（正四面体 + 三个面内动点）从头到尾跑一遍。
@@ -285,6 +287,67 @@ console.log('\n【内置测试题之二：正方体 —— 四个问的答案逐
       // 辅助线要真的多出来 —— 这是「播放器有东西可揭示」的前提
       ok('辅助线比场景里的多', r.edges.filter((e) => e.aux).length >= 5, `${r.edges.filter((e) => e.aux).length} 条辅助线`)
     }
+  }
+}
+
+console.log('\n【翻折题：把角度扫一遍，取值范围必须是算出来的、不是手推的】')
+{
+  // **这条断言欠了很久。**
+  // demo.ts 里那句注释曾经写着「demo.check.ts 里有一条扫角度的断言守着它」——
+  // 而那条断言**全仓都不存在**，是一张假保险单。
+  // 代价是实打实的：这道题的取值范围我手工推过两次，**两次都错**
+  //   · 第一次写「0 到 2√2」
+  //   · 第二次按「|AC| ± 半径」改成 [2√2−2, 2√2+2] —— 那个公式只有在 A、C 与圆共面时才成立，
+  //     而 A 根本不在 D₂ 转动的那个平面上（那个平面过 C 且垂直于 BC）
+  // 正确答案是 [2, 2√5]（D₂ = (2−2cosθ, −2sinθ, 2)，于是 |AD₂|² = 12 − 8cosθ）。
+  // 现在让**程序自己扫**：把角度从 −180 扫到 180，记下 |AD₂| 的最小与最大值。
+  const parsed = parseScene(FOLD_SCENE)
+  const lo = { v: Infinity, d: 0 }
+  const hi = { v: -Infinity, d: 0 }
+  let solvedCount = 0
+  for (let deg = -180; deg <= 180; deg += 1) {
+    const pts = parsed.points.map((p) => (p.kind === 'onArc' ? { ...p, angle: deg } : p))
+    const r = solve(pts, parsed.constraints)
+    if (!r.ok) continue
+    solvedCount++
+    // 解答里的点名是规范化过的（D2 存成 D₂），所以直接用下标写法当键。
+    // 两种写法都试一下 —— 换个命名习惯也不至于让这条断言悄悄空转。
+    const A = r.points['A'] ?? r.points['A\u2081']
+    const D2 = r.points['D\u2082'] ?? r.points['D2']
+    if (!A || !D2) continue
+    const d = d3(A, D2)
+    if (d < lo.v) {
+      lo.v = d
+      lo.d = deg
+    }
+    if (d > hi.v) {
+      hi.v = d
+      hi.d = deg
+    }
+  }
+
+  ok('各角度都能解出来', solvedCount > 300, `${solvedCount} 个角度`)
+  ok('最小值是 2（即 2√5 那个式子里 cosθ 取 1 的那端）', Math.abs(lo.v - 2) < 1e-3, `${lo.v.toFixed(4)} @ ${lo.d}°`)
+  ok('最大值是 2√5 ≈ 4.4721', Math.abs(hi.v - 2 * Math.sqrt(5)) < 1e-3, `${hi.v.toFixed(4)} @ ${hi.d}°`)
+  // 顺手把「|AD| 到底是多少」也钉住 —— 注释里曾经写成 2√2，实际是 2（2√2 是 |AC|）
+  const flat = solve(
+    parsed.points.map((p) => (p.kind === 'onArc' ? { ...p, angle: 0 } : p)),
+    parsed.constraints,
+  )
+  if (flat.ok) {
+    const A0 = flat.points['A']
+    const D0 = flat.points['D'] ?? flat.points['D\u2082'] ?? flat.points['D2']
+    if (A0 && D0) ok('θ=0 时 |AD| 是 2（不是 2√2）', Math.abs(d3(A0, D0) - 2) < 1e-3, d3(A0, D0).toFixed(4))
+  }
+  // 90° 那条（第（1）问）也要对得上：2√3 ≈ 3.4641
+  const right = solve(
+    parsed.points.map((p) => (p.kind === 'onArc' ? { ...p, angle: 90 } : p)),
+    parsed.constraints,
+  )
+  if (right.ok) {
+    const A9 = right.points['A']
+    const D9 = right.points['D\u2082'] ?? right.points['D2']
+    if (A9 && D9) ok('90° 时 |AD₂| 是 2√3 ≈ 3.4641', Math.abs(d3(A9, D9) - 2 * Math.sqrt(3)) < 1e-3, d3(A9, D9).toFixed(4))
   }
 }
 

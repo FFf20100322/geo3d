@@ -178,7 +178,7 @@ export const SOLID_TEMP_SCENE = {
  * 走的是一段圆弧，起点是原来的 D，终点是折到底之后的位置。
  * 所以它单独用 onArc 这一类点，拖动时改的是角度。
  */
-export const FOLD_PROBLEM = `在平行四边形 ABCD 中，AB = BC = 2，∠ABC = 90°。把平行四边形沿对角线 BC 折起，
+export const FOLD_PROBLEM = `在平行四边形 ABCD 中，AB = BC = 2，∠ABC = 90°。把平行四边形沿 BC 折起，
 使点 D 离开原来的平面，折起之后的点记作 D₂。
 （1）当二面角 A-BC-D₂ 为 90° 时，求 A、D₂ 两点间的距离；
 （2）求 A、D₂ 两点间距离的取值范围。`
