@@ -226,6 +226,32 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
     line.applyMatrix4(placed.matrix)
     solidGroup.add(line)
     geo.dispose()
+
+    // **端面那个圆要单独画。**
+    //
+    // 踩过一次：圆柱、圆锥原来用的是几何体的 openEnded = true（两端挖空），
+    // 所以顶面 / 底面的圆根本没有 —— 用户一眼就看出来了。
+    // 但直接把 openEnded 改成 false 也不行：闭合几何体的线框会在端面上
+    // 画出三角形的**放射线**（那是三角剖分的边），看着像张蜘蛛网。
+    // 所以侧面照旧用挖空的（线条干净），端面的圆自己画一条 LineLoop。
+    const r = placed.params.radius ?? 0
+    if (r > 0 && (placed.geometry === 'cylinder' || placed.geometry === 'cone')) {
+      // 圆柱两端都有圆；圆锥只有底面有（顶点那端是个点）
+      const caps = placed.geometry === 'cone' ? [-placed.params.height! / 2] : [-placed.params.height! / 2, placed.params.height! / 2]
+      for (const y of caps) {
+        // 圆柱的上下半径可以不一样（圆台），所以半径按端取
+        const rr = placed.geometry === 'cylinder' && y > 0 ? placed.params.radiusTop ?? r : placed.params.radiusBottom ?? r
+        if (!(rr > 0)) continue
+        const pts: THREE.Vector3[] = []
+        for (let i = 0; i <= 64; i++) {
+          const a = (i / 64) * Math.PI * 2
+          pts.push(new THREE.Vector3(Math.cos(a) * rr, y, Math.sin(a) * rr))
+        }
+        const ring = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), matSolid)
+        ring.applyMatrix4(placed.matrix)
+        solidGroup.add(ring)
+      }
+    }
   }
 
   function setScene(r: Renderable) {
