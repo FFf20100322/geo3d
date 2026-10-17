@@ -208,7 +208,48 @@ function residualsOf(
   const raw: number[] = []
   const info: Residual[] = []
 
+  /** 这条约束引用了哪几条线段 —— 用来做退化检查 */
+  const segmentsOf = (c: Constraint): [string, string][] => {
+    switch (c.kind) {
+      case 'distance':
+        return [[c.a, c.b]]
+      case 'equalDistance':
+        return [c.ab, c.cd]
+      case 'angle':
+        return [
+          [c.from, c.at],
+          [c.at, c.to],
+        ]
+      case 'lineAngle':
+      case 'perpendicular':
+      case 'parallel':
+        return [c.p, c.q]
+      case 'perpLinePlane':
+        return [c.line]
+      case 'coplanar':
+        // 三点塌成一条线时「四点共面」在数学上**仍然成立**，不是漏洞，所以不查
+        return []
+    }
+  }
+
   for (const c of cs) {
+    // **退化检查：约束引用的线段塌成一点时，直接判失败。**
+    //
+    // 为什么非要这一句（两份独立审计都点到了）：unit() 对零长度向量会返回一个
+    // 硬编码的假方向 (EPS,0,0)，于是一条**根本不存在的线**被安上了方向，
+    // 而用叉积算的那几类残差（平行、垂直、线面垂直）在退化位置**恰好等于 0** ——
+    // 实测 A 与 B 重合时，「AB ⊥ CD」和「AB ∥ CD」同时成立，还报 ok=true。
+    //
+    // **口径必须窄**：只看「这条约束自己引用的那一段」是否零长。
+    // 不能一刀切地看全图有没有重合的点 —— 绕棱旋转的动点在 0° 时本就该与起点重合，
+    // 辅助点也可能正好定义在同一个位置。（上一轮我按全图查，自检立刻挂掉三条，已撤回。）
+    const collapsed = segmentsOf(c).find(([x, y]) => dist(v(P, x), v(P, y)) < unitLen * 1e-3)
+    if (collapsed) {
+      const desc = `线段 ${collapsed[0]}${collapsed[1]} 退化成一点（这条条件失去意义）`
+      raw.push(1)
+      info.push({ desc, error: 1, actual: '两点重合' })
+      continue
+    }
     switch (c.kind) {
       case 'distance': {
         const d = dist(v(P, c.a), v(P, c.b))

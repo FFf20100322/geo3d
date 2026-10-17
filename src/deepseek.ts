@@ -148,6 +148,25 @@ const SCENE_SYSTEM = `你是高中立体几何的场景建模助手。用户给�
 只有**带「若」「当…时」「若…则」这类前提**的条件才放进 variants；
 题目从头到尾都成立的条件（棱长、垂直关系这些）照旧写在外面。
 
+**曲面立体（球、椭球、圆柱、圆锥、圆台）走 solids 这个键。**
+平面多边形拼不出来的东西（球、椭圆、圆柱…）必须写进 solids，否则图里会少一块：
+题目里出现「球 O」「圆柱 OO₁」「圆锥」「圆台」这些字眼时，**一定要写**。
+
+  "solids": [
+    {"kind":"sphere","through":["A","B","C","D"],"center":"A"},
+    {"kind":"cylinder","axis":["O","O1"],"radius":1,"radiusTop":1,"radiusBottom":2},
+    {"kind":"cone","apex":"P","base":["A","B","C"],"radius":1},
+    {"kind":"frustum","axis":["O","O1"],"radiusTop":0.5,"radiusBottom":1},
+    {"kind":"ellipsoid","center":"O","ax":["O","A"],"ay":["O","B"],"az":["O","C"]}
+  ]
+
+**折纸 / 翻折题里「折之前那个位置的点」要藏起来**，
+否则图上会多出一个孤零零的字母点，让人以为那是题里的点：
+写一个 "hiddenPoints": ["D"] —— 让参考点留在数据里（约束要用它）、但别画出来。
+
+**variants 里也可以有自己的 edges / faces / solids / hiddenPoints** ——
+某一问多出一条棱、多一个面、或者要藏掉不同的点时，写在该问的 variant 里。
+
 点的 name 一律用 ASCII 下标写法，例如 A1、B1、C1，不要写成 A₁ 或 A_1。
 点的 kind 只能取这九种：
 - free：自由点，必须给 at，是你估计的初始坐标。它只用来帮求解器落到正确的解上，可以很粗糙，
