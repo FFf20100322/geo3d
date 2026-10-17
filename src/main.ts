@@ -1684,13 +1684,13 @@ function renderHistory() {
  * 所以这里自己把画布画一遍、再把标注按同样的位置画上去。
  * 位置换算在 `export.ts` 里（纯函数，已经单独验过），这里只负责画。
  */
-function compositeFrame(): HTMLCanvasElement | null {
+function compositeFrame(maxSide = 1600): HTMLCanvasElement | null {
   const src = $('app').querySelector('canvas')
   const labels = $('labels')
   if (!(src instanceof HTMLCanvasElement)) return null
 
   const cbox = src.getBoundingClientRect()
-  const want = exportSize(src.width, src.height)
+  const want = exportSize(src.width, src.height, maxSide)
   // 题面单独在下面留一条。**光有一张 3D 图，别人不知道这是哪道题** ——
   // 发给老师或同学时，还得再打一遍字说明题意，那张图就没用了。
   // 题面直接从页面上取：它是单一来源，不用再存一份副本（存了就会有一天对不上）
@@ -1831,7 +1831,7 @@ function exportVideo(): void {
     say('这个浏览器不支持录制视频，换成「存图」吧。', 'err')
     return
   }
-  const first = compositeFrame()
+  const first = compositeFrame(900)
   if (!first) {
     say('画布还没准备好，稍等一下再试。', 'err')
     return
@@ -1859,7 +1859,7 @@ function exportVideo(): void {
   // 典型的强制重排）。结果主线程被它占死，**setTimeout 被饿死** ——
   // 表现就是录制进度停在第 2 / 4 步一动不动，而且没有任何错误（不是异常，是轮不到）。
   // 12fps 对录制完全够用（成片本来就是 30fps 的流），主线程就腾出来了。
-  const FRAME_MS = 1000 / 12
+  const FRAME_MS = 1000 / 6
   const tick = (now: number) => {
     if (!alive) return
     if (now - lastDraw >= FRAME_MS) {
