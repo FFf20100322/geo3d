@@ -453,6 +453,34 @@ export function solve(defs: PointDef[], constraints: Constraint[], log?: (s: str
   for (const [k, p] of Object.entries(P)) points[k] = [p.x, p.y, p.z]
 
   const maxError = info.reduce((s, r) => Math.max(s, r.error), 0)
+
+  // **收敛之后再查一遍「有没有两点重合」。**
+  //
+  // 为什么非要这一步（两份独立审计都点到了这里）：
+  // `unit()` 对零长度向量会返回一个硬编码的假方向 (EPS,0,0) ——
+  // 于是一条**根本不存在的线**被安上了一个方向，而用叉积算的那几类残差
+  // （平行、垂直、线面垂直）在退化位置上**恰好等于 0**。
+  // 实测的后果是：A 与 B 重合时，「AB ⊥ CD」和「AB ∥ CD」**同时成立**，
+  // 求解器报 ok=true、残差 7e-10，界面照样把这张图展示出来。
+  // 这是「宁拒不误」这条底线上最直接的一个洞。
+  //
+  // 不去改 unit() 的每个调用点（那要动好几处、还得逐条推公式），
+  // 而是在**出口**统一拦：解题几何里**任何一个点对重合都是错的** ——
+  // 棱长为零、两点叠在一起、球的半径为零，全都由它兜住。
+  // 阈值用特征长度的千分之一：正常图形差得远，真退化的一眼就分得出来。
+  if (maxError < 1e-4) {
+    const names = Object.keys(P)
+    for (let a = 0; a < names.length; a++) {
+      for (let b = a + 1; b < names.length; b++) {
+        if (dist(P[names[a]], P[names[b]]) < unitLen * 1e-3) {
+          const msg = `点 ${names[a]} 与 ${names[b]} 重合成一个点（图里会少一条棱，条件也失去意义）`
+          info.push({ desc: msg, error: 1, actual: '两点重合' })
+          return { ok: false, points, residuals: info, maxError: 1 }
+        }
+      }
+    }
+  }
+
   // 容差 1e-4：距离类按特征长度归一化，角度类按弧度，都换算到同一个尺度上比较
   return { ok: maxError < 1e-4, points, residuals: info, maxError }
 }
