@@ -65,6 +65,16 @@ export interface Scene3d {
    * 不对应图上任何一个点，所以只能给坐标。
    */
   setGrid(segments: [Vec3, Vec3][]): void
+  /** 这张图里有几个曲面（元素清单要列出来） */
+  solidCount(): number
+  /** 第 i 个曲面现在是不是藏起来的 */
+  isSolidHidden(i: number): boolean
+  /** 整块显示/隐藏第 i 个曲面 —— 用户要的「整个连续曲面统一开合」就是这一句 */
+  setSolidHidden(i: number, hidden: boolean): void
+  /** 这一张图里有哪些曲面因为几何退化没画出来（空数组表示都画出来了） */
+  skippedSolids(): string[]
+  /** 这张图里每个曲面是什么（清单上要写「圆柱」「圆锥」这种名字） */
+  solidKinds(): string[]
   /** 允许被手指抓住的点。命中判定用实时坐标，所以拖完之后不用重新登记。 */
   setGrabbables(names: string[]): void
   /**
@@ -168,6 +178,10 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
   const faceObjects = new Map<string, { mesh: THREE.Mesh; color: number; pts: string[] }>()
   /** 被用户手动关掉的面。换图时清空，所以每次换图都是全显示。 */
   const hiddenFaces = new Set<string>()
+  /** 藏起来的曲面（按序号）。整块藏 —— 用户要的是「整个连续曲面统一开合」 */
+  const hiddenSolids = new Set<number>()
+  /** 这张图里每个曲面的种类名，清单上要写「圆柱」这种字 */
+  let solidKinds: string[] = []
 
   /** 把显隐规则重新落到每个面上。任何一次重建/高亮之后都要调一次。 */
   function applyFaceVisibility() {
@@ -214,7 +228,12 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
    */
   function addSolid(s: NonNullable<Renderable['solids']>[number]): void {
     const placed = solidPlacement(s)
-    if (!placed) return // 退化的情况（轴两端重合、半轴共线等）跳过，不画一个错的
+    if (!placed) {
+      // 退化的情况（轴两端重合、半轴共线等）跳过，不画一个错的。
+      // **但要让调用方知道少了一个** —— 悄悄少一块是最难查的那种。
+      skippedSolids.push(s.kind)
+      return
+    }
     const geo =
       placed.geometry === 'sphere'
         ? new THREE.SphereGeometry(placed.params.radius ?? 1, 28, 18)
@@ -228,9 +247,16 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
               1,
               true,
             )
+    // **一个曲面的所有线归到一个组里。**
+    // 用户要求：圆柱、圆锥、整个连续曲面要能**整块**点开点关、整块高亮，
+    // 而不是只藏掉一小截。散着加进去就没有「块」这个概念，显隐只能一条一条来。
+    const g = new THREE.Group()
+    g.userData.solidIndex = solidObjects.length
+    solidObjects.push(g)
+    solidGroup.add(g)
     const line = new THREE.LineSegments(new THREE.WireframeGeometry(geo), matSolid)
     line.applyMatrix4(placed.matrix)
-    solidGroup.add(line)
+    g.add(line)
     geo.dispose()
 
     // **端面那个圆要单独画。**
@@ -255,7 +281,7 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
         }
         const ring = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), matSolid)
         ring.applyMatrix4(placed.matrix)
-        solidGroup.add(ring)
+        g.add(ring)
       }
     }
   }
@@ -266,6 +292,10 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
    *
    * 单独一个 Group：它和箭头一样是「解释性」的东西，换场景时要一起清掉。
    */
+  /** 每个曲面一个组，整块显隐就靠它 */
+  const solidObjects: THREE.Group[] = []
+  /** 这一张图里有哪些曲面因为几何退化没画出来（要让调用方知道） */
+  let skippedSolids: string[] = []
   const gridGroup = new THREE.Group()
   scene.add(gridGroup)
   const matGrid = new THREE.LineBasicMaterial({ color: 0x5a6472, transparent: true, opacity: 0.55 })
@@ -288,7 +318,10 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
     for (const g of [...gridGroup.children]) gridGroup.remove(g)
     // 注意：solidGroup 挂在 scene 上，group.clear() 清不到它，所以自己清
     for (const s of [...solidGroup.children]) solidGroup.remove(s)
-    for (const s of r.solids ?? []) addSolid(s)
+    for (const s of r.solids ?? []) {
+      solidKinds.push(s.kind)
+      addSolid(s)
+    }
     labelHost.innerHTML = '' // 换场景时清掉可能残留的标签 DOM
     labelsDirty = true // 换了图要重新排一次标注
     edgeObjects = new Map()
@@ -1098,9 +1131,41 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
       // 「全部隐藏」就是把每个面都记成隐藏的；「全部显示」就是清空这张名单
       if (!on) for (const key of faceObjects.keys()) hiddenFaces.add(key)
       applyFaceVisibility()
+      // **曲面也要跟着一起开合。**
+      // 用户要求圆柱、圆锥那种整个连续曲面能像平面一样整块点开点关；
+      // 「面：全开/全关」这个按钮如果只管平面、不管曲面，
+      // 用户按了「全关」还能看见圆柱 —— 那个按钮说的就不算数了。
+      for (const [i, g] of solidObjects.entries()) {
+        const hidden = !on
+        g.visible = !hidden
+        if (hidden) hiddenSolids.add(i)
+        else hiddenSolids.delete(i)
+      }
     },
-    allFacesHidden: () => faceObjects.size > 0 && hiddenFaces.size >= faceObjects.size,
+    allFacesHidden: () => {
+      const facesDone = faceObjects.size > 0 && hiddenFaces.size >= faceObjects.size
+      const solidsDone = solidObjects.length > 0 && hiddenSolids.size >= solidObjects.length
+      // 两类都藏干净了才算「全关」；一类都没有时按另一类算
+      if (faceObjects.size && solidObjects.length) return facesDone && solidsDone
+      return faceObjects.size ? facesDone : solidsDone
+    },
     isFaceHidden: (key) => hiddenFaces.has(key),
+    /** 这张图里有几个曲面（元素清单要列出来） */
+    solidCount: () => solidObjects.length,
+    /** 第 i 个曲面现在是不是藏起来的 */
+    isSolidHidden: (i) => hiddenSolids.has(i),
+    /** 整块显示/隐藏第 i 个曲面 —— 用户要的「整个连续曲面统一开合」就是这一句 */
+    setSolidHidden(i, hidden) {
+      const g = solidObjects[i]
+      if (!g) return
+      g.visible = !hidden
+      if (hidden) hiddenSolids.add(i)
+      else hiddenSolids.delete(i)
+    },
+    /** 这一张图里有哪些曲面因为几何退化没画出来（空数组表示都画出来了） */
+    skippedSolids: () => [...skippedSolids],
+    /** 这张图里每个曲面是什么（清单上要写「圆柱」「圆锥」这种名字） */
+    solidKinds: () => solidKinds,
     setFaceHidden(key, hidden) {
       // 清单上的勾选框走这条路。改完要通知界面，让「面：全开/全关」按钮与
       // 清单上的回显一起刷新 —— 两处不同步就会出现「清单说开着、图上是关的」。

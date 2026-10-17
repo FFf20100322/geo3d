@@ -86,18 +86,19 @@ export function createHistory(store: Store): History {
       const all = read()
       const existing = all.find((r) => (input.id && r.id === input.id) || r.problemText === input.problemText)
       const rest = all.filter((r) => r !== existing)
-      // **先把传进来的东西整个铺开**，再覆盖要自己定的两个字段。
-      //
-      // 这里是第二次踩同一个坑（第一次是 solution.ts 的 mergeSolution）：
-      // 原来是手工列举字段（id/savedAt/problemText/extra/thumbnail/scene），
-      // 后来 HistoryRecord 加了 image（原图）与 solution（解答），
-      // **这两行没人补上，于是每次都静默丢掉** —— 后果很贵：
-      //   · 从历史里打开一道题，解答没了，只能重新花钱问一次模型
-      //   · 用户明确要求「存档保留所有的东西」，原图也是其中一样
-      //   · 导出 .g3d 时自然也没有原图和解答（而 g3d.ts 的注释还写着「存档里本来就留着全部东西」）
-      // 铺开写法之后，往 HistoryRecord 上加字段就**不需要再改这里**了。
+      // **输入里没传的字段，沿用原来那条记录的值。**
+      // 只用 `...input` 展开是不够的（二审实测出来的，而且是我刚引入的）：
+      // 没传的字段会被展开成 `undefined`，写进 JSON 就消失 ——
+      // 于是「只想改个题面」再存一次，会把已经存好的解答与原图**擦掉**，
+      // 而且 id 不变，用户看到的是「更新了一条」而不是「新建了一条」，毫无察觉。
       const rec: HistoryRecord = {
         ...input,
+        problemText: input.problemText ?? existing?.problemText ?? '',
+        extra: input.extra ?? existing?.extra ?? '',
+        thumbnail: input.thumbnail ?? existing?.thumbnail,
+        image: input.image ?? existing?.image,
+        scene: input.scene ?? existing?.scene,
+        solution: input.solution ?? existing?.solution,
         // 同一道题再存一次时沿用原来的 id，免得任何持有这个 id 的地方突然失效
         id: existing?.id ?? input.id ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
         savedAt: Date.now(),

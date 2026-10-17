@@ -167,5 +167,30 @@ console.log('\n【存档里的每一样都要留得住】')
   ok('再存一次时新传的原图也留住', again[0]?.image === 'data:image/png;base64,IMAGE2')
 }
 
+console.log('\n【只改一部分字段时，别的字段不能被擦掉】')
+{
+  // 审计抓出来的，而且是我自己刚引入的回归：
+  // 改成 `{...input}` 展开之后，**没传的字段会展开成 undefined、写进 JSON 就消失** ——
+  // 于是「只想改个题面」再存一次，会把已经存好的解答与原图擦掉，
+  // 而 id 不变，用户看到的是「更新了一条」而不是「新建了一条」，毫无察觉。
+  // 修法是「输入里没传的字段沿用原来那条记录的值」。这条断言守着它。
+  const s2 = fakeStore().store
+  const h2 = createHistory(s2)
+  h2.save({
+    problemText: '只想改补充条件',
+    extra: '原来这句',
+    image: 'IMG',
+    thumbnail: 'THUMB',
+    solution: { steps: [{ title: 't', text: 'x' }] } as never,
+  })
+  h2.save({ problemText: '只想改补充条件', extra: '新的一句' })
+  const r2 = h2.list()[0]
+  ok('只改补充条件时，原图没被擦掉', r2?.image === 'IMG', String(r2?.image))
+  ok('只改补充条件时，解答没被擦掉', !!r2?.solution)
+  ok('只改补充条件时，缩略图没被擦掉', r2?.thumbnail === 'THUMB')
+  ok('要改的那个字段确实改了', r2?.extra === '新的一句', String(r2?.extra))
+  ok('仍然只有一条记录', h2.list().length === 1, `${h2.list().length} 条`)
+}
+
 console.log(`\n${failed === 0 ? '✓ 全部通过' : `✗ ${failed} 项未通过`}`)
 if (failed > 0) process.exit(1)

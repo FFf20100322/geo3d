@@ -614,7 +614,46 @@ function renderElementSection(body: HTMLElement): void {
       chips.appendChild(el)
     }
   }
+  // **曲面也要能整块开合。**
+  // 用户要求：圆柱、圆锥那种整个连续曲面要像平面一样能点开点关、整块高亮，
+  // 而不是只藏掉一小截。所以清单里单独列一节，每个曲面一个勾选框。
+  const solKinds = scene?.solidKinds() ?? []
+  if (solKinds.length) {
+    const chips = section(`曲面（${solKinds.length}）`)
+    const NAMES: Record<string, string> = {
+      sphere: '球',
+      ellipsoid: '椭球',
+      cylinder: '圆柱',
+      cone: '圆锥',
+      frustum: '圆台',
+    }
+    solKinds.forEach((kind, i) => {
+      const el = document.createElement('label')
+      el.className = 'el-chip face'
+      const box = document.createElement('input')
+      box.type = 'checkbox'
+      box.checked = !(scene?.isSolidHidden(i) ?? false)
+      box.addEventListener('change', () => {
+        scene?.setSolidHidden(i, !box.checked)
+        syncSceneChrome()
+      })
+      const text = document.createElement('span')
+      text.textContent = `${NAMES[kind] ?? kind}（整块）`
+      el.append(box, text)
+      chips.appendChild(el)
+    })
+  }
+
+  // 有曲面因为几何退化没画出来时如实说一句 —— 悄悄少一块是最难查的那种。
+  const skipped = scene?.skippedSolids() ?? []
+  if (skipped.length) {
+    const note = document.createElement('p')
+    note.className = 'muted'
+    note.textContent = `有 ${skipped.length} 个曲面因为几何数据退化（轴两端重合、半径为零之类）没能画出来。`
+    $('dyn-body').appendChild(note)
+  }
 }
+
 function movingPoints() {
   return (currentScene?.points ?? []).filter(isMoving)
 }
