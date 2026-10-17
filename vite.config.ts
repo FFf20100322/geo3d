@@ -16,7 +16,12 @@ const keyPath = '.certs/dev-key.pem'
 const certPath = '.certs/dev-cert.pem'
 const hasCert = existsSync(keyPath) && existsSync(certPath)
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
+  // **构建时带路径前缀，这是因为要部署到 GitHub Pages 的项目页**。
+  // 项目页的地址是 https://<用户名>.github.io/geo3d/ —— 资源在 /geo3d/ 下面，
+  // 构建出来的 index.html 里如果还写 /assets/... 就会 404（白屏）。
+  // 本地开发仍然用 /，不然 `pnpm dev` 打开就找不到东西。
+  base: command === 'build' ? '/geo3d/' : '/',
   server: {
     host: true,
     port: 5173,
@@ -30,4 +35,4 @@ export default defineConfig({
       : {}),
   },
   build: { target: 'es2022' },
-})
+}))
