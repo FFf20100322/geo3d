@@ -1151,20 +1151,57 @@ async function handleFile(file: File) {
   }
 }
 
-/** 选题页：框只当提示用，点框和点列表等价；识别始终用整张照片，所以框不准也不会漏条件 */
+/** 把框里的那部分图片裁出来 —— 识别只认框里那一段 */
+async function cropTo(dataUrl: string, box: [number, number, number, number]): Promise<string> {
+  const img = new Image()
+  img.src = dataUrl
+  await img.decode()
+  const [x, y, w, h] = box
+  const sx = Math.round(x * img.naturalWidth)
+  const sy = Math.round(y * img.naturalHeight)
+  const sw = Math.max(1, Math.round(w * img.naturalWidth))
+  const sh = Math.max(1, Math.round(h * img.naturalHeight))
+  const c = document.createElement('canvas')
+  c.width = sw
+  c.height = sh
+  const ctx = c.getContext('2d')
+  if (!ctx) return dataUrl // 裁不了就退回整张，宁可多送一点也别什么都不识别
+  ctx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh)
+  return c.toDataURL('image/png')
+}
+
+/**
+ * 选题页：**框可以自由拖动与缩放，识别只认框里那一段**。
+ *
+ * 原来的写法是「框只当提示用，点框和点列表等价；识别始终用整张照片」——
+ * 好处是框画歪了也不漏条件，但代价是**框不能拖不能缩**，
+ * 而且与原始需求「支持手动框选只识别框内」对不上。现在按需求来。
+ *
+ * 坐标一律用**分数**（0~1，相对图片显示区的比例）：
+ *   · 框的定位本来就是百分比，拖完写回去还是百分比；
+ *   · 裁切要的是原图像素，把分数乘上 naturalWidth/Height 就得到 ——
+ *     **全程不碰屏幕像素，所以高倍屏、图片缩放、窗口大小都不用管**
+ *     （自己算 DPR 是这个项目踩过的老坑，能不碰就不碰）。
+ */
 function renderPick(dataUrl: string, problems: ProblemCandidate[]) {
   const holder = $('pick-image')
   holder.innerHTML = ''
   const img = document.createElement('img')
   img.src = dataUrl
   holder.appendChild(img)
+  img.style.touchAction = 'none' // 拖动框时别把页面带着滚
 
   const list = $('pick-list')
   list.innerHTML = ''
 
   for (const p of problems) {
     const pick = () => {
-      void translate(dataUrl, p).catch((e) => say(message(e), 'err'))
+      // **只送框里那一段。** 没有框（识别没给出位置）时才退回整张。
+      const run = async () => {
+        const src = p.box ? await cropTo(dataUrl, p.box) : dataUrl
+        await translate(src, p)
+      }
+      void run().catch((e) => say(message(e), 'err'))
     }
 
     const item = document.createElement('button')
@@ -1177,14 +1214,131 @@ function renderPick(dataUrl: string, problems: ProblemCandidate[]) {
     list.appendChild(item)
 
     if (!p.box) continue
-    const [x, y, w, h] = p.box
     const box = document.createElement('div')
     box.className = 'box'
-    box.style.cssText = `left:${x * 100}%;top:${y * 100}%;width:${w * 100}%;height:${h * 100}%`
+    const paint = () => {
+      const [x, y, w, h] = p.box!
+      box.style.cssText = `left:${x * 100}%;top:${y * 100}%;width:${w * 100}%;height:${h * 100}%;touch-action:none;cursor:move`
+    }
+    paint()
     const tag = document.createElement('b')
     tag.textContent = p.label
     box.appendChild(tag)
-    box.onclick = pick
+
+    /** 拖动与缩放共用的一段：把指针位置换成图片显示区里的分数 */
+    const frac = (ev: PointerEvent) => {
+      const r = holder.getBoundingClientRect()
+      return {
+        fx: (ev.clientX - r.left) / Math.max(1, r.width),
+        fy: (ev.clientY - r.top) / Math.max(1, r.height),
+      }
+    }
+    /** 框一个不小于这个比例的尺寸 —— 拖成零面积就再也没法拖回来了 */
+    const MIN = 0.06
+    let moved = false
+
+    box.addEventListener('pointerdown', (ev) => {
+      if ((ev.target as HTMLElement).dataset.h) return // 抓的是角上的把手，交给下面处理
+      ev.preventDefault()
+      ev.stopPropagation()
+      const r = holder.getBoundingClientRect()
+      const startX = ev.clientX
+      const startY = ev.clientY
+      const [x0, y0, w0, h0] = p.box!
+      moved = false
+      box.setPointerCapture(ev.pointerId)
+      const move = (e: PointerEvent) => {
+        const dx = (e.clientX - startX) / Math.max(1, r.width)
+        const dy = (e.clientY - startY) / Math.max(1, r.height)
+        if (Math.abs(dx) > 0.004 || Math.abs(dy) > 0.004) moved = true
+        // 夹在图片范围内：框不能被拖出画面
+        p.box = [
+          Math.min(1 - w0, Math.max(0, x0 + dx)),
+          Math.min(1 - h0, Math.max(0, y0 + dy)),
+          w0,
+          h0,
+        ]
+        paint()
+      }
+      const up = () => {
+        box.removeEventListener('pointermove', move)
+        box.removeEventListener('pointerup', up)
+        box.removeEventListener('pointercancel', up)
+      }
+      box.addEventListener('pointermove', move)
+      box.addEventListener('pointerup', up)
+      box.addEventListener('pointercancel', up)
+    })
+
+    // 四个角各一个把手。**触摸目标 44px** —— 手机上小把手根本点不中。
+    for (const h of ['nw', 'ne', 'sw', 'se'] as const) {
+      const grip = document.createElement('i')
+      grip.dataset.h = h
+      grip.style.cssText =
+        'position:absolute;width:44px;height:44px;background:transparent;touch-action:none;' +
+        (h.includes('n') ? 'top:-22px;' : 'bottom:-22px;') +
+        (h.includes('w') ? 'left:-22px;' : 'right:-22px;') +
+        'cursor:' +
+        (h === 'nw' || h === 'se' ? 'nwse-resize' : 'nesw-resize')
+      // 把手里面点一点可见的，让人知道这儿能抓
+      const dot = document.createElement('span')
+      dot.style.cssText =
+        'position:absolute;left:50%;top:50%;width:14px;height:14px;margin:-7px 0 0 -7px;' +
+        'border-radius:50%;background:#ff9f43;border:2px solid #0f1319'
+      grip.appendChild(dot)
+      grip.addEventListener('pointerdown', (ev) => {
+        ev.preventDefault()
+        ev.stopPropagation()
+        const start = frac(ev)
+        const [x0, y0, w0, h0] = p.box!
+        moved = false
+        grip.setPointerCapture(ev.pointerId)
+        const move = (e: PointerEvent) => {
+          const cur = frac(e)
+          const dx = cur.fx - start.fx
+          const dy = cur.fy - start.fy
+          let x = x0
+          let y = y0
+          let w = w0
+          let hh = h0
+          if (h.includes('w')) {
+            const nx = Math.min(x0 + w0 - MIN, Math.max(0, x0 + dx))
+            w = x0 + w0 - nx
+            x = nx
+          } else {
+            w = Math.min(1 - x0, Math.max(MIN, w0 + dx))
+          }
+          if (h.includes('n')) {
+            const ny = Math.min(y0 + h0 - MIN, Math.max(0, y0 + dy))
+            hh = y0 + h0 - ny
+            y = ny
+          } else {
+            hh = Math.min(1 - y0, Math.max(MIN, h0 + dy))
+          }
+          p.box = [x, y, w, hh]
+          moved = true
+          paint()
+        }
+        const up = () => {
+          grip.removeEventListener('pointermove', move)
+          grip.removeEventListener('pointerup', up)
+          grip.removeEventListener('pointercancel', up)
+        }
+        grip.addEventListener('pointermove', move)
+        grip.addEventListener('pointerup', up)
+        grip.addEventListener('pointercancel', up)
+      })
+      box.appendChild(grip)
+    }
+
+    // 点一下框 = 选这道题；但**拖完的那一下不算点**，否则一拖就跳去识别了
+    box.onclick = () => {
+      if (moved) {
+        moved = false
+        return
+      }
+      pick()
+    }
     holder.appendChild(box)
   }
 }
