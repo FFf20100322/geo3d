@@ -1852,13 +1852,24 @@ function exportVideo(): void {
   const HOLD_MS = 900
   // 每帧把最新的画面画进那张正在被录的画布
   let alive = true
-  const tick = () => {
+  let lastDraw = 0
+  // **必须限流。**
+  // 踩过：原来是每一帧都调 compositeFrame() —— 而那个函数要新建一张画布、重画、
+  // **还要逐个测量所有标注并取计算样式**（getBoundingClientRect + getComputedStyle，
+  // 典型的强制重排）。结果主线程被它占死，**setTimeout 被饿死** ——
+  // 表现就是录制进度停在第 2 / 4 步一动不动，而且没有任何错误（不是异常，是轮不到）。
+  // 12fps 对录制完全够用（成片本来就是 30fps 的流），主线程就腾出来了。
+  const FRAME_MS = 1000 / 12
+  const tick = (now: number) => {
     if (!alive) return
-    const f = compositeFrame()
-    const ctx = first.getContext('2d')
-    if (f && ctx) {
-      ctx.clearRect(0, 0, first.width, first.height)
-      ctx.drawImage(f, 0, 0)
+    if (now - lastDraw >= FRAME_MS) {
+      lastDraw = now
+      const f = compositeFrame()
+      const ctx = first.getContext('2d')
+      if (f && ctx) {
+        ctx.clearRect(0, 0, first.width, first.height)
+        ctx.drawImage(f, 0, 0)
+      }
     }
     requestAnimationFrame(tick)
   }
