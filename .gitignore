@@ -1,4 +1,4 @@
-﻿node_modules/
+node_modules/
 dist/
 *.log
 .tmp/
@@ -25,4 +25,11 @@ android/app/src/main/assets/public/
 
 # 签名密钥库：不进仓库
 android/*.keystore
+
+# 演示片中间产物：帧序列、片段、成片、临时浏览器 profile 都是二进制或可再生
+promo/segs/
+promo/raw/
+promo/out/
+promo/.tool/
+promo/.edge-*/
 
