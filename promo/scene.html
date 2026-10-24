@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Geo3D promo</title>
+<style>
+  html,body{margin:0;width:100%;height:100%;background:#080c16;overflow:hidden;
+    font-family:"Microsoft YaHei","PingFang SC","Segoe UI",sans-serif;}
+  #bg{position:fixed;inset:0;width:100%;height:100%}
+  .scene{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;
+    justify-content:center;opacity:0;transition:opacity .7s ease;pointer-events:none;padding:0 90px}
+  .scene.on{opacity:1}
+  .big{font-size:168px;font-weight:800;color:#fff;letter-spacing:4px;line-height:1.05}
+  .big .a{color:#4FD1C5;text-shadow:0 0 46px rgba(79,209,197,.5)}
+  .sub{font-size:50px;color:#9AA6B8;margin-top:30px;letter-spacing:2px}
+  .line{font-size:70px;color:#fff;margin:16px 0;opacity:0;transform:translateY(34px);
+    transition:opacity .85s cubic-bezier(.2,.7,.2,1),transform .85s cubic-bezier(.2,.7,.2,1)}
+  .line.in{opacity:1;transform:none}
+  .line.hl{color:#4FD1C5;text-shadow:0 0 34px rgba(79,209,197,.45)}
+  .kicker{font-size:42px;color:#4FD1C5;letter-spacing:8px;margin-bottom:26px;opacity:0;
+    transition:opacity .8s ease}
+  .kicker.in{opacity:1}
+  .steps{display:flex;align-items:center;gap:16px;margin-top:56px}
+  .step{padding:26px 30px;border:2px solid rgba(79,209,197,.55);border-radius:16px;
+    color:#fff;font-size:38px;white-space:nowrap;opacity:0;transform:translateY(40px) scale(.96);
+    transition:all .7s cubic-bezier(.2,.7,.2,1);background:rgba(79,209,197,.06)}
+  .step.in{opacity:1;transform:none}
+  .arrow{width:52px;height:3px;background:rgba(79,209,197,.5);opacity:0;transition:opacity .5s ease;position:relative}
+  .arrow.in{opacity:1}
+  .arrow:after{content:"";position:absolute;right:-2px;top:-7px;border-left:14px solid rgba(79,209,197,.75);
+    border-top:8px solid transparent;border-bottom:8px solid transparent}
+  .feat{display:flex;flex-direction:column;gap:26px;margin-top:40px}
+  .feat .it{font-size:56px;color:#fff;display:flex;align-items:center;gap:26px;opacity:0;
+    transform:translateX(-36px);transition:all .7s cubic-bezier(.2,.7,.2,1)}
+  .feat .it.in{opacity:1;transform:none}
+  .dot{width:16px;height:16px;border-radius:50%;background:#4FD1C5;box-shadow:0 0 22px #4FD1C5;flex:0 0 auto}
+  .num{position:absolute;left:110px;top:110px;font-size:210px;font-weight:800;
+    color:rgba(79,209,197,.10);letter-spacing:6px}
+  table{border-collapse:collapse;margin-top:26px}
+  th,td{padding:15px 34px;font-size:40px;text-align:left;white-space:nowrap}
+  th{color:#4FD1C5;font-size:36px;letter-spacing:3px;border-bottom:2px solid rgba(79,209,197,.45)}
+  tr.r{opacity:0;transform:translateY(20px);transition:all .6s ease}
+  tr.r.in{opacity:1;transform:none}
+  td:nth-child(1){color:#9AA6B8}
+  td:nth-child(2){color:#c9d3e3}
+  td:nth-child(3){color:#fff}
+  td.warn{color:#9AA6B8 !important}
+  .limits{display:flex;flex-direction:column;gap:22px;margin-top:34px}
+  .limits .l{font-size:50px;color:#e8eef8;opacity:0;transform:translateY(24px);transition:all .7s ease}
+  .limits .l.in{opacity:1;transform:none}
+  .limits .l b{color:#FF9F45;font-weight:700}
+  .foot{position:absolute;bottom:60px;font-size:30px;color:#5d6b82;letter-spacing:2px}
+</style>
+</head>
+<body>
+<canvas id="bg"></canvas>
+
+<!-- S1 片头 -->
+<section class="scene" data-from="0" data-to="7">
+  <div class="big" data-at="0.6">Geo<span class="a">3D</span></div>
+  <div class="sub" data-at="1.6" style="opacity:0;transform:translateY(20px);transition:all .9s ease">高中立体几何 · 3D 解题与演示</div>
+</section>
+
+<!-- S2 钩子 -->
+<section class="scene" data-from="7" data-to="13">
+  <div class="line" data-at="7.5">搜题软件给你一段答案。</div>
+  <div class="line hl" data-at="9.4">然后呢？</div>
+</section>
+
+<!-- S3 核心 -->
+<section class="scene" data-from="13" data-to="22">
+  <div class="kicker" data-at="13.4">最大的不同</div>
+  <div class="line" data-at="14.0">坐标不由大模型给。</div>
+  <div class="line" data-at="15.8">本地求解器算，逐条回验。</div>
+  <div class="line hl" data-at="17.8">过不了就不出图 —— 宁拒不误。</div>
+</section>
+
+<!-- S4 流程 -->
+<section class="scene" data-from="22" data-to="31">
+  <div class="kicker" data-at="22.4">它怎么把一道题变成图</div>
+  <div class="steps">
+    <div class="step" data-at="23.2">题面文字</div>
+    <div class="arrow" data-at="23.8"></div>
+    <div class="step" data-at="24.3">点与关系</div>
+    <div class="arrow" data-at="24.9"></div>
+    <div class="step" data-at="25.4">约束求解</div>
+    <div class="arrow" data-at="26.0"></div>
+    <div class="step" data-at="26.5">逐条回验</div>
+    <div class="arrow" data-at="27.1"></div>
+    <div class="step" data-at="27.6">3D 图形</div>
+  </div>
+</section>
+
+<!-- S5a -->
+<section class="scene" data-from="31" data-to="35">
+  <div class="num" data-at="31">01</div>
+  <div class="kicker" data-at="31.2">怎么把题弄进来</div>
+  <div class="feat">
+    <div class="it" data-at="31.8"><span class="dot"></span>拍照，或直接打字</div>
+    <div class="it" data-at="32.4"><span class="dot"></span>一张照片多题，点选要解的那道</div>
+    <div class="it" data-at="33.0"><span class="dot"></span>识别结果可以改字、可以补条件</div>
+    <div class="it" data-at="33.6"><span class="dot"></span>只认印刷体，插图不当已知条件</div>
+  </div>
+</section>
+
+<!-- S5b -->
+<section class="scene" data-from="35" data-to="39">
+  <div class="num" data-at="35">02</div>
+  <div class="kicker" data-at="35.2">它怎么把图建出来</div>
+  <div class="feat">
+    <div class="it" data-at="35.8"><span class="dot"></span>模型只输出点与关系，不给坐标</div>
+    <div class="it" data-at="36.4"><span class="dot"></span>本地求解器算坐标</div>
+    <div class="it" data-at="37.0"><span class="dot"></span>每条约束、每个共面逐条回验</div>
+    <div class="it" data-at="37.6"><span class="dot"></span>三档重试，都不过就如实说建不出来</div>
+  </div>
+</section>
+
+<!-- S5c -->
+<section class="scene" data-from="39" data-to="43">
+  <div class="num" data-at="39">03</div>
+  <div class="kicker" data-at="39.2">图形与解题</div>
+  <div class="feat">
+    <div class="it" data-at="39.8"><span class="dot"></span>转、缩放，能一路放大钻进模型内部</div>
+    <div class="it" data-at="40.4"><span class="dot"></span>每个面独立配色，点面切换显隐</div>
+    <div class="it" data-at="41.0"><span class="dot"></span>分步解题，辅助线一条条画出来</div>
+    <div class="it" data-at="41.6"><span class="dot"></span>每一步点亮用到的点、棱、面</div>
+  </div>
+</section>
+
+<!-- S5d -->
+<section class="scene" data-from="43" data-to="47">
+  <div class="num" data-at="43">04</div>
+  <div class="kicker" data-at="43.2">标注、多解与动点</div>
+  <div class="feat">
+    <div class="it" data-at="43.8"><span class="dot"></span>三类角、长度、比例，全部本地算</div>
+    <div class="it" data-at="44.4"><span class="dot"></span>向量法 / 坐标系法 / 基底法可切换</div>
+    <div class="it" data-at="45.0"><span class="dot"></span>按问分组，每问独有条件不串</div>
+    <div class="it" data-at="45.6"><span class="dot"></span>动点能拖，图形实时跟着变</div>
+  </div>
+</section>
+
+<!-- S6 对比 -->
+<section class="scene" data-from="47" data-to="56">
+  <div class="kicker" data-at="47.2">和主流搜题软件比一比</div>
+  <table>
+    <tr data-at="47.6"><th>维度</th><th>主流搜题软件</th><th>Geo3D</th></tr>
+    <tr class="r" data-at="48.2"><td>输出形式</td><td>文字答案 + 讲解</td><td>文字答案 + 可交互 3D</td></tr>
+    <tr class="r" data-at="48.8"><td>立体图正确性</td><td>一般不展示立体图</td><td>本地求解 + 逐条回验</td></tr>
+    <tr class="r" data-at="49.4"><td>角度长度标注</td><td>写在文字里</td><td>标在图上，本地算</td></tr>
+    <tr class="r" data-at="50.0"><td>动点</td><td>一般不支持</td><td>可拖动，实时联动</td></tr>
+    <tr class="r" data-at="50.6"><td>解题方法</td><td>通常一种</td><td>向量 / 坐标 / 基底可切</td></tr>
+    <tr class="r" data-at="51.2"><td>题库</td><td>海量，命中即出</td><td class="warn">没有题库，现场推理</td></tr>
+    <tr class="r" data-at="51.8"><td>手写体</td><td>多数支持</td><td class="warn">只支持印刷体</td></tr>
+    <tr class="r" data-at="52.4"><td>出答案速度</td><td>命中题库很快</td><td class="warn">现场推理较慢</td></tr>
+    <tr class="r" data-at="53.0"><td>账号与数据</td><td>账号 + 云端</td><td>无账号，Key 只存本机</td></tr>
+  </table>
+</section>
+
+<!-- S7 缺点 -->
+<section class="scene" data-from="56" data-to="63">
+  <div class="kicker" data-at="56.2" style="color:#FF9F45">但它也有缺点</div>
+  <div class="limits">
+    <div class="l" data-at="56.8"><b>没有题库</b>　每道题现场推理，比命中题库慢</div>
+    <div class="l" data-at="57.8"><b>只认印刷体</b>　手写题拍进来识别不了</div>
+    <div class="l" data-at="58.8"><b>复杂图形会建不出来</b>　宁拒不误的代价</div>
+    <div class="l" data-at="59.8"><b>还没上架应用商店</b>　现在是侧载 APK</div>
+    <div class="l" data-at="60.8"><b>标注多了会挤</b>　已按重要性分档</div>
+  </div>
+</section>
+
+<!-- S8 片尾 -->
+<section class="scene" data-from="63" data-to="69">
+  <div class="big" data-at="63.4">Geo<span class="a">3D</span></div>
+  <div class="sub" data-at="64.2" style="opacity:0;transform:translateY(20px);transition:all .9s ease">自己拍的题，自己看得懂的图</div>
+  <div class="foot">v1.0.0-my.23　高中立体几何 · 3D 解题与演示</div>
+</section>
+
+<script>
+const DUR = 69
+const cv = document.getElementById('bg')
+const cx = cv.getContext('2d')
+let W = 0, H = 0
+function resize() {
+  W = cv.width = window.innerWidth
+  H = cv.height = window.innerHeight
+}
+resize()
+window.addEventListener('resize', resize)
+
+// 线框立方体：缓慢自转，青色细线 + 辉光。纯手算投影，不引第三方库。
+const V = [[-1,-1,-1],[1,-1,-1],[1,1,-1],[-1,1,-1],[-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1]]
+const E = [[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]]
+function drawCube(t) {
+  const ry = t * 0.28, rx = Math.sin(t * 0.22) * 0.35
+  const cy_ = Math.cos(ry), sy = Math.sin(ry)
+  const cx_ = Math.cos(rx), sx = Math.sin(rx)
+  const scale = Math.min(W, H) * 0.30
+  const pts = V.map(([x, y, z]) => {
+    // 绕 Y
+    let X = x * cy_ + z * sy
+    let Z = -x * sy + z * cy_
+    // 绕 X
+    let Y = y * cx_ - Z * sx
+    Z = y * sx + Z * cx_
+    const d = 3.2
+    const k = d / (d - Z)
+    return [W / 2 + X * scale * k, H / 2 + Y * scale * k]
+  })
+  cx.clearRect(0, 0, W, H)
+  // 淡网格
+  cx.strokeStyle = 'rgba(79,209,197,0.045)'
+  cx.lineWidth = 1
+  for (let x = 0; x < W; x += 80) { cx.beginPath(); cx.moveTo(x, 0); cx.lineTo(x, H); cx.stroke() }
+  for (let y = 0; y < H; y += 80) { cx.beginPath(); cx.moveTo(0, y); cx.lineTo(W, y); cx.stroke() }
+  // 立方体
+  cx.shadowColor = 'rgba(79,209,197,0.55)'
+  cx.shadowBlur = 18
+  cx.strokeStyle = 'rgba(79,209,197,0.5)'
+  cx.lineWidth = 2.2
+  for (const [a, b] of E) {
+    cx.beginPath(); cx.moveTo(pts[a][0], pts[a][1]); cx.lineTo(pts[b][0], pts[b][1]); cx.stroke()
+  }
+  cx.shadowBlur = 0
+  // 顶点
+  cx.fillStyle = 'rgba(255,255,255,0.75)'
+  for (const p of pts) { cx.beginPath(); cx.arc(p[0], p[1], 4, 0, 7); cx.fill() }
+}
+
+const t0 = performance.now() + 2200   // 录制脚本有约 2 秒前摇，延迟启动让片头不被切掉
+const watchers = [...document.querySelectorAll('[data-at]')]
+const scenes = [...document.querySelectorAll('.scene')]
+
+function tick() {
+  const t = (performance.now() - t0) / 1000
+  drawCube(t)
+  for (const e of watchers) {
+    if (t >= +e.dataset.at) e.classList.add('in')
+  }
+  for (const s of scenes) {
+    const on = t >= +s.dataset.from && t < +s.dataset.to
+    s.classList.toggle('on', on)
+  }
+  if (t < DUR + 1) requestAnimationFrame(tick)
+}
+requestAnimationFrame(tick)
+</script>
+</body>
+</html>
