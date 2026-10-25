@@ -133,9 +133,10 @@ def main():
     bgm = make_bgm()
     print("bgm:", bgm)
     print("srt:", make_srt(lines))
-    mux(os.path.join(ROOT, "out", "geo3d-douyin.mp4"),
+    # .src 里存的是无声母版（render_anim.py 的产物），out 只放成品
+    mux(os.path.join(ROOT, ".src", "silent-douyin.mp4"),
         os.path.join(ROOT, "out", "geo3d-douyin-final.mp4"), lines, bgm, "竖屏")
-    mux(os.path.join(ROOT, "out", "geo3d-60s.mp4"),
+    mux(os.path.join(ROOT, ".src", "silent-landscape.mp4"),
         os.path.join(ROOT, "out", "geo3d-landscape-final.mp4"), lines, bgm, "横屏")
 
 
