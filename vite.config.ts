@@ -17,11 +17,15 @@ const certPath = '.certs/dev-cert.pem'
 const hasCert = existsSync(keyPath) && existsSync(certPath)
 
 export default defineConfig(({ command }) => ({
-  // **构建时带路径前缀，这是因为要部署到 GitHub Pages 的项目页**。
-  // 项目页的地址是 https://<用户名>.github.io/geo3d/ —— 资源在 /geo3d/ 下面，
-  // 构建出来的 index.html 里如果还写 /assets/... 就会 404（白屏）。
-  // 本地开发仍然用 /，不然 `pnpm dev` 打开就找不到东西。
-  base: command === 'build' ? '/geo3d/' : '/',
+  // **默认 base 必须是 `/`，不能写死成 `/geo3d/`。**
+  // 这里踩过一个会让 APK 白屏的坑：为了 GitHub Pages 的项目页
+  // （https://<用户名>.github.io/geo3d/，资源在 /geo3d/ 下），曾经把构建前缀
+  // 写死成 '/geo3d/' —— 而 APK 里页面在根路径，`/geo3d/assets/xxx.js` 一律 404，
+  // 打出来的包一打开就是白屏。
+  //
+  // 所以改成：普通构建用 '/'（APK、exe、本地都靠它），
+  // 只有发网页版时才用 `pnpm build:pages`（命令行 `--base=/geo3d/` 覆盖这里）。
+  base: command === 'build' ? '/' : '/',
   server: {
     host: true,
     port: 5173,

@@ -114,13 +114,13 @@
          免得三排按钮挤在一起。 */
       #qsel { position: fixed; top: 64px; left: 12px; right: 12px; z-index: 17; display: none; flex-direction: column; gap: 8px; align-items: flex-start; }
       #qsel .qgroup { display: flex; align-items: flex-start; gap: 8px; max-width: 100%; flex-wrap: wrap; }
-      #qsel .qhead { flex: none; padding: 5px 11px; font-size: 12.5px; border-radius: 8px; border: 1px solid #3b4757; background: rgba(24,31,41,.95); color: #cbd5e1; font-weight: 600; }
+      #qsel .qhead { flex: none; padding: 5px 11px; font-size: 12.5px; border-radius: 8px; border: 1px solid rgba(122,137,160,.42); background: rgba(14,18,25,.55); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); color: #e2e8f0; font-weight: 600; }
       #qsel .qhead.on { background: #2f6fed; border-color: #2f6fed; color: #fff; }
       #qsel .qopts { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-      #qsel .qopts button { padding: 5px 10px; font-size: 12.5px; border-radius: 8px; border: 1px solid #2b3442; background: rgba(20,26,34,.9); color: #cbd5e1; }
+      #qsel .qopts button { padding: 5px 10px; font-size: 12.5px; border-radius: 8px; border: 1px solid rgba(122,137,160,.42); background: rgba(14,18,25,.55); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); color: #e2e8f0; }
       #qsel .qopts button.on { background: #ffd166; border-color: #ffd166; color: #1a1205; font-weight: 600; }
 
-      #dyn-panel, #elem-panel { position: fixed; top: 104px; left: 12px; right: 12px; z-index: 16; display: none; flex-direction: column; padding: 10px 12px; border-radius: 10px; background: rgba(20,26,34,.94); border: 1px solid #2b3442; }
+      #dyn-panel, #elem-panel { position: fixed; top: 104px; left: 12px; right: 12px; z-index: 16; display: none; flex-direction: column; padding: 10px 12px; border-radius: 10px; background: rgba(14,18,25,.72); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(122,137,160,.34); }
       /* 内容自己滚，收起按钮钉在面板底部，不会被滚出去 */
       #dyn-body { overflow-y: auto; max-height: 48vh; }
       #elem-body .sec { margin: 10px 0 6px; font-size: 12px; color: #98a2b3; }
@@ -137,7 +137,18 @@
       /* 顶栏右侧的模式切换与各面板入口。按钮上的字数会变（例如「标注：全部(24) · 2项存疑」），
          所以允许换行、靠右对齐，宁可换行也不能让按钮被挤出屏幕左边点不到。 */
       #scene-tools { position: fixed; top: 60px; right: 12px; max-width: calc(100% - 24px); z-index: 17; display: none; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
-      #scene-tools button { padding: 6px 10px; font-size: 13px; }
+      /* **这几个按钮要浮在 3D 图形上面，所以自己得半透明。**
+         原来 button.ghost 是全透明 —— 字直接压在线条上，读不清；
+         全实色又会把图形挡掉一块。折中用「很淡的底 + 背后模糊」：
+         图形能透出来，字又是亮的、有模糊衬底，仍然清楚。
+         注意别调得比这更透：手机上强光下会变成「看不见按钮」。 */
+      #scene-tools button {
+        padding: 6px 10px; font-size: 13px;
+        background: rgba(14,18,25,.55);
+        backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+        border: 1px solid rgba(122,137,160,.42);
+        color: #e6e9ef;
+      }
       /* 「不用拍照」的两条路：各成一块、各带标题，中间留开距离 */
       .pick-sec { margin-top: 22px; padding-top: 16px; border-top: 1px solid #222833; }
       .pick-sec.pick-first { margin-top: 0; padding-top: 0; border-top: 0; }

@@ -79,8 +79,10 @@ export interface Scene3d {
   setGrabbables(names: string[]): void
   /**
    * 上方要给别的面板让出多少像素。
-   * 让位的方式是缩小渲染区域本身，而不是把模型藏在面板后面 ——
-   * 否则调参数的时候根本看不见自己调的是什么。
+   *
+   * 让位**不是**缩小渲染区域，也不是把模型藏到面板后面：画布始终铺满整屏
+   * （按钮半透明浮在图形上才有意义），只是把视锥整体平移一点、取景按可见空档收窄，
+   * 于是图形正好落在没被控件压住的那一段里。
    */
   setViewInset(top: number, bottom: number): void
   /** 手指按在动点上时触发（这时不会旋转视角） */
@@ -723,20 +725,32 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
   }
 
   /**
-   * 取景距离：按**当前**的宽高比与视野角算，让图形的外接球正好装得下。
+   * 取景距离：按**当前**的宽高比与「看得见的那段高度」算，让图形的外接球正好装得下。
    *
-   * 为什么不能写死一个倍数：上下的工具条与播放条会占掉一块，画布实际比窗口矮不少。
-   * 用窗口尺寸算出来的距离，等让位生效之后就太近了 —— 真机上见过图形撑出屏幕、
-   * 只看得到中间一块。这里按真实的宽高比算，让位变化时重算一次就总是合适的。
+   * 为什么不能写死一个倍数：上下的工具条与播放条会压掉一段，真正看得见的高度
+   * 比窗口矮不少。用整屏算出来的距离，等按钮压上去之后就太近了 ——
+   * 真机上见过图形撑出屏幕、只看得到中间一块。这里按 freeRatio 算，
+   * 让位变化时重算一次就总是合适的。
    */
+  /**
+   * 真正能看见的那一段高度占整屏的比例（由 syncViewport 更新）。
+   *
+   * 取景必须按「看得见的那一段」算，不能按整屏算 —— 画布现在是铺满整屏的
+   * （那样按钮底下才有图形）。如果仍按整屏装进去，图形的上半截会被工具条盖住、
+   * 下半截被播放条盖住，用户永远只看得到中间一条。
+   */
+  let freeRatio = 1
+
   function applyFit(): void {
     if (!lastFit) return
     const vFov = (camera.fov * Math.PI) / 180
+    // 纵向按可用空档收窄；横向没有让位，仍按整屏宽高比算
+    const vFovFree = 2 * Math.atan(Math.tan(vFov / 2) * Math.max(freeRatio, 0.2))
     const hFov = 2 * Math.atan(Math.tan(vFov / 2) * Math.max(camera.aspect, 0.01))
     // 箭头（坐标轴）可能伸到图形外面，取景要按「图形与箭头的较大者」来 ——
     // 只按图形算的话，轴尖会被切在屏幕外（真机上 z 轴的字就跑到了屏幕上面）。
     const need = Math.max(lastFit.radius, arrowReach)
-    const dv = need / Math.sin(vFov / 2)
+    const dv = need / Math.sin(vFovFree / 2)
     const dh = need / Math.sin(Math.min(hFov / 2, Math.PI / 2 - 1e-3))
     const dist = Math.max(dv, dh) * 1.1 // 留一成余量，免得贴着边
     controls.target.copy(lastFit.center)
@@ -749,14 +763,29 @@ export function mountScene3d(host: HTMLElement, labelHost: HTMLElement, hint: HT
   let bottomInset = 0
   const syncViewport = () => {
     const w = window.innerWidth
-    // 上下被控件占掉的那两块要扣掉，渲染区域缩到中间；至少留 80 像素
-    const h = Math.max(80, window.innerHeight - topInset - bottomInset)
+    const h = window.innerHeight
+    // **画布铺满整屏，改用平移视锥来给控件让位。**
+    // 原来是「缩减渲染高度 + 给画布 margin-top」，于是画布上方空出一条黑带，
+    // 按钮压在一片纯色上 —— 用户指着截图说「按钮下面要有 3D 图形」。
+    // 现在画布和标注层都是满屏，只把视锥整体挪半个让位量，
+    // 让图形的中心落在「工具条下沿」到「播放条上沿」这段空档的正中。
+    const shift = (bottomInset - topInset) / 2
+    if (shift !== 0) {
+      // setViewOffset 本来是给多屏拼接用的；宽高都传整屏，所以只平移、不缩放。
+      // 它内部会连带更新 projectionMatrixInverse，点选射线和标注投影都跟着对，
+      // 不用在别处再补一遍。
+      camera.setViewOffset(w, h, 0, shift, w, h)
+    } else {
+      camera.clearViewOffset()
+    }
     camera.aspect = w / h
+    // 取景要用的可用比例（至少留 80 像素，免得算成负数）
+    freeRatio = Math.max(80, h - topInset - bottomInset) / h
     camera.updateProjectionMatrix()
     renderer.setSize(w, h)
     labelRenderer.setSize(w, h)
-    renderer.domElement.style.marginTop = `${topInset}px`
-    labelHost.style.top = `${topInset}px`
+    renderer.domElement.style.marginTop = '0px'
+    labelHost.style.top = '0px'
     const canvas = renderer.domElement
     // 我看不到画面，所以让页面自己把「尺寸对不上」这类事说出来
     const problems: string[] = []

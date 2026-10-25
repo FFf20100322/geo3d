@@ -36,6 +36,8 @@ import {
 import { exportSize, pickVideoMime, toCanvasLabels } from './export'
 // .g3d 打包：把一道题连同原图、题面、解答、3D 一起存成一个文件，可以发给别人
 import { buildG3d, parseG3d, suggestFileName } from './g3d'
+// 装成应用（APK）时存文件：WebView 里 `<a download>` 是空的，得走原生写文件 + 分享
+import { saveBlobNative, saveTextNative } from './nativefile'
 import { createHistory, type HistoryRecord } from './history'
 import {
   DEMO_PROBLEM,
@@ -100,7 +102,22 @@ let currentImage: string | undefined
 let currentRecordId: string | undefined
 /** 当前这道题已经建好的场景（不含辅助线）。解题过程要挂在它上面。 */
 let currentScene: Scene | undefined
-function show(v: ViewName | '3d') {
+
+/**
+ * 页面切换历史，只给「左边缘右滑返回」用。
+ * 记的是**上一次停在哪一页**，不是浏览器历史 —— 这是个单页应用，路由都在内存里。
+ */
+const navStack: (ViewName | '3d')[] = []
+let lastShown: ViewName | '3d' | null = null
+
+function show(v: ViewName | '3d', opts?: { keepHistory?: boolean }) {
+  // 只有「换到另一页」才算一次导航；同一页重画（列表刷新之类）不记
+  if (!opts?.keepHistory && lastShown !== null && lastShown !== v) {
+    navStack.push(lastShown)
+    // 不设上限的话来回点几十次就一直长；20 层足够回溯
+    if (navStack.length > 20) navStack.shift()
+  }
+  lastShown = v
   for (const [name, el] of Object.entries(views)) el.classList.toggle('on', name === v)
   onSceneView = v === '3d'
   scene?.setActive(onSceneView)
@@ -115,6 +132,90 @@ function show(v: ViewName | '3d') {
 
 /** 当前是不是停在 3D 页 */
 let onSceneView = false
+
+/**
+ * 左边缘向右滑 = 返回上一页。
+ *
+ * **只在「装成应用」时启用**：APK（Capacitor 原生）与「添加到主屏幕」的网页应用。
+ * 桌面浏览器和 exe 里不启用 —— 那里本来就没有「返回上一页」这回事，
+ * 鼠标/触控板用户还会被误触发。
+ *
+ * **只在最左边 24px 起手才算**：3D 页的单指拖动是旋转视角，
+ * 要是整屏都能横滑，一转视角就会不小心退出这一页。贴边起手既合手机习惯，
+ * 也几乎不可能误触；而且判定通过后会把事件吃掉，画布就不会跟着转。
+ */
+const SWIPE_EDGE_PX = 24
+/** 划够这么远才真的返回（也接受屏宽的三分之一，取小者） */
+const SWIPE_FIRE_PX = 64
+
+function isInstalledApp(): boolean {
+  const cap = (window as unknown as { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor
+  if (typeof cap?.isNativePlatform === 'function' && cap.isNativePlatform()) return true
+  // 「添加到主屏幕」后以独立窗口运行，没有地址栏 —— 这种也要有返回手势
+  return window.matchMedia?.('(display-mode: standalone)').matches === true
+}
+
+/** 返回上一页；没有上一页就返回 false（让调用方什么都不做） */
+function goBack(): boolean {
+  const prev = navStack.pop()
+  if (!prev) return false
+  // keepHistory：返回本身不能再记一条，否则会来回弹
+  show(prev, { keepHistory: true })
+  return true
+}
+
+/** 正在进行中的右滑手势 */
+let swipeBack: { id: number; x0: number; y0: number; live: boolean } | null = null
+
+window.addEventListener(
+  'pointerdown',
+  (e) => {
+    if (!isInstalledApp()) return
+    if (e.pointerType === 'mouse') return
+    if (e.clientX > SWIPE_EDGE_PX) return
+    swipeBack = { id: e.pointerId, x0: e.clientX, y0: e.clientY, live: false }
+  },
+  { capture: true },
+)
+
+window.addEventListener(
+  'pointermove',
+  (e) => {
+    const g = swipeBack
+    if (!g || e.pointerId !== g.id) return
+    const dx = e.clientX - g.x0
+    const dy = Math.abs(e.clientY - g.y0)
+    if (!g.live) {
+      // 先判方向：明显向右横着走才算「返回」，竖着走就把手势让给页面/画布
+      if (dx > 12 && dx > dy * 1.5) g.live = true
+      else if (dy > 20 || dx < -8) {
+        swipeBack = null
+        return
+      }
+    }
+    if (g.live) {
+      // 吃掉事件：不然画布会把这次横滑当成旋转视角
+      e.preventDefault()
+      e.stopPropagation()
+    }
+  },
+  { capture: true, passive: false },
+)
+
+function endSwipe(e: PointerEvent): void {
+  const g = swipeBack
+  if (!g || e.pointerId !== g.id) return
+  const dx = e.clientX - g.x0
+  const live = g.live
+  swipeBack = null
+  if (!live) return
+  // 抬起也要吃掉，否则被按到的那个按钮会收到一次 click
+  e.stopPropagation()
+  if (dx >= Math.min(SWIPE_FIRE_PX, window.innerWidth / 3)) goBack()
+}
+
+window.addEventListener('pointerup', endSwipe, { capture: true })
+window.addEventListener('pointercancel', endSwipe, { capture: true })
 
 /**
  * 「看」与「调」两种模式。
@@ -1784,9 +1885,19 @@ function stampName(): string {
 
 /**
  * 存一个文件到手机/电脑上。
- * 与 `.g3d` 走同一条路：能用系统的「另存为」就用，用不了就退回下载。
+ * 与 `.g3d` 走同一条路：在应用里就写文件并拉起分享，浏览器里就用「另存为」或下载。
  */
 async function saveBlob(blob: Blob, name: string): Promise<void> {
+  // 装成应用时 WebView 没有下载处理器，`<a download>` 会静默失败 —— 走原生那条
+  try {
+    if (await saveBlobNative(name, blob, '保存图片')) {
+      say(`已保存：${name}（在分享面板里可以存到「文件」或直接发出去）`, 'ok')
+      return
+    }
+  } catch (e) {
+    say(`保存失败：${message(e)}`, 'err')
+    return
+  }
   try {
     const picker = (window as unknown as { showSaveFilePicker?: (o: unknown) => Promise<FileSystemFileHandle> })
       .showSaveFilePicker
@@ -1914,13 +2025,25 @@ function exportVideo(): void {
  * 但它在手机上要看浏览器版本（Chrome for Android 要到 154 才有），所以不能指望它。
  * 用不了就退回下载：浏览器会把文件放进「下载」文件夹，**那也是一个真实的手机文件夹**。
  *
- * 这两条路都不需要任何特殊权限。至于「一键跳到文件管理器」——
- * **网页做不到**（网页不能启动别的 App），那条得等打包成 APK 之后再说。
+ * **装成应用（APK）时要走另一条路**：安卓 WebView 没有下载处理器，
+ * 退回下载那一步是空的 —— 用户看到「已导出」，翻遍手机也找不到文件。
+ * 所以应用里改成「写进缓存目录 + 拉起系统分享面板」，
+ * 用户可以把文件存到「文件」、发给微信/QQ、或者传网盘。
  */
 async function exportG3d(rec: HistoryRecord): Promise<void> {
   // 不带软件版本号：那只是为了排查问题用的，为它专门注入一个构建期常量不划算
   const text = buildG3d(rec)
   const name = suggestFileName(rec)
+  // 装成应用：交给原生那条路，成功就直接结束，不走下面的浏览器分支
+  try {
+    if (await saveTextNative(name, text, '保存这道题')) {
+      say(`已保存：${name}（在分享面板里可以存到「文件」或直接发出去）`, 'ok')
+      return
+    }
+  } catch (e) {
+    say(`保存失败：${message(e)}`, 'err')
+    return
+  }
   const blob = new Blob([text], { type: 'application/json' })
   try {
     const picker = (window as unknown as { showSaveFilePicker?: (o: unknown) => Promise<FileSystemFileHandle> })
@@ -2058,7 +2181,11 @@ function setupOffline(): void {
   // 只在 https 或 localhost 下装；局域网 http 下浏览器会直接拒绝
   if (!window.isSecureContext) return
   window.addEventListener('load', () => {
-    void navigator.serviceWorker.register('/sw.js').catch(() => {
+    // 用相对路径注册，不要写成 `/sw.js`：
+    // 网页版部署在 https://<用户>.github.io/geo3d/ 这种子路径下，
+    // 绝对路径会去找站点根目录的 sw.js —— 404，离线就悄悄失效了。
+    // 而 APK 里页面在根路径，相对路径同样解析成 /sw.js，两边都对。
+    void navigator.serviceWorker.register('sw.js').catch(() => {
       // 装不上不影响正常使用，不打扰用户
     })
   })
