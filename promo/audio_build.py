@@ -108,42 +108,11 @@ def make_srt(lines):
 
 # ---------- 3. 混音 + 输出 ----------
 def mux(video, outfile, lines, bgm, label=""):
-    sfx = os.path.join(AUD, "sfx-mambo.wav")
-    # (时间, 音量) —— 曼波音效点缀在片头/流程/对比/结尾四个转场
-    hits = [(0.9, 0.85), (22.0, 0.82), (47.0, 0.82), (63.3, 0.88)]
-
-    args = [FF, "-y", "-hide_banner", "-loglevel", "error", "-i", video]
-    for it in lines:
-        args += ["-i", it["path"]]
-    args += ["-i", bgm, "-i", sfx]
-
-    nbh = len(hits)
-    fc = []
-    for i, it in enumerate(lines, 1):
-        fc.append(
-            f"[{i}:a]adelay={int(it['at']*1000)}:all=1,"
-            f"aformat=sample_rates=48000:channel_layouts=stereo,volume=1.0[v{i}]"
-        )
-    bg_i = len(lines) + 1
-    fc.append(f"[{bg_i}:a]volume=0.10,afade=t=in:st=0:d=3,afade=t=out:st=64:d=5[bg]")
-
-    fx_i = len(lines) + 2
-    fc.append(f"[{fx_i}:a]asplit={nbh}" + "".join(f"[s{k}]" for k in range(nbh)))
-    for k, (t, v) in enumerate(hits):
-        fc.append(
-            f"[s{k}]adelay={int(t*1000)}:all=1,"
-            f"aformat=sample_rates=48000:channel_layouts=stereo,volume={v}[f{k}]"
-        )
-
-    mixin = "".join(f"[v{i}]" for i in range(1, len(lines) + 1))
-    mixin += "[bg]" + "".join(f"[f{k}]" for k in range(nbh))
-    n_in = len(lines) + 1 + nbh
-    fc.append(
-        f"{mixin}amix=inputs={n_in}:normalize=0:dropout_transition=0,"
-        f"loudnorm=I=-16:TP=-1.5:LRA=11[aout]"
-    )
+    """纯 BGM 版：不加旁白、不加音效。"""
+    args = [FF, "-y", "-hide_banner", "-loglevel", "error", "-i", video, "-i", bgm]
+    fc = "[1:a]volume=0.92,afade=t=in:st=0:d=3,afade=t=out:st=64:d=5[aout]"
     args += [
-        "-filter_complex", ";".join(fc),
+        "-filter_complex", fc,
         "-map", "0:v", "-map", "[aout]",
         "-c:v", "copy", "-c:a", "aac", "-b:a", "128k", "-ar", "48000",
         "-t", str(DUR), "-movflags", "+faststart", outfile,
