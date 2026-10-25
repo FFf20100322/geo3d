@@ -36,7 +36,8 @@ const HEADLESS = arg('headless', '1') === '1'
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
-const profileDir = path.resolve(`.edge-${PORT}`)
+// profile 放系统临时目录：放项目里会被 vite 文件监听盯上，直接把它搞崩（EBUSY）
+const profileDir = path.join(process.env.TEMP || '/tmp', `geo3d-edge-${PORT}`)
 rmSync(profileDir, { recursive: true, force: true })
 const child = spawn(
   CHROME,
@@ -52,6 +53,8 @@ const child = spawn(
     '--mute-audio',
     '--enable-unsafe-swiftshader',
     '--use-angle=swiftshader',
+    // 开发服务器是自签 HTTPS，不忽略证书会直接连不上
+    '--ignore-certificate-errors',
     ...(HEADLESS ? ['--headless=new'] : []),
     'about:blank',
   ],
