@@ -2,7 +2,7 @@
   "appId": "com.geo3d.desktop",
   "productName": "Geo3D",
   "directories": {
-    "output": "F:/g3d-out"
+    "output": "F:/DSH-Outputs/geo3d-build"
   },
   "files": [
     "electron/**",
